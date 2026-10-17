@@ -544,13 +544,17 @@ $("view-time").addEventListener("click", async e => {
 });
 
 /* ---------- team chat, announcements, reports ---------- */
-let anns = [], msgs = [], myReports = [], chatDel = null;
+let anns = [], msgs = [], myReports = [], chatDel = null, annEdit = null;
 const whenFull = s => new Date(s).toLocaleString(undefined, {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
 function postRow(p, kind) {
   const mine = p.created_by === me.email, canDel = isMgr() || (kind === "m" && mine);
   const key = kind + ":" + p.id;
   const del = !canDel ? "" : chatDel === key ? `<span class="meta">Delete?</span><button class="link del" data-chat="del-yes" data-kind="${kind}" data-id="${p.id}">Yes</button><button class="link" data-chat="del-no">No</button>` : `<button class="link del" data-chat="del" data-kind="${kind}" data-id="${p.id}">Delete</button>`;
-  return `<div class="todo"${kind === "a" ? ' style="border-left:4px solid var(--accent)"' : ""}><div class="body"><div class="row"><b>${esc(nameOf(p.created_by))}</b><span class="meta">${whenFull(p.created_at)}</span></div><p class="note">${esc(p.body)}</p>${del ? `<div class="actions">${del}</div>` : ""}</div></div>`;
+  const edit = kind === "a" && isMgr() && chatDel !== key ? `<button class="link" data-chat="edit" data-id="${p.id}">Edit</button>` : "";
+  const bodyHtml = kind === "a" && annEdit === p.id
+    ? `<div class="fu-box"><textarea id="annEdit-${p.id}" maxlength="2000">${esc(p.body)}</textarea><div class="actions"><button class="primary" data-chat="edit-save" data-id="${p.id}">Save</button><button class="link" data-chat="edit-cancel">Cancel</button></div></div>`
+    : `<p class="note">${esc(p.body)}</p>${(edit || del) ? `<div class="actions">${edit}${del}</div>` : ""}`;
+  return `<div class="todo"${kind === "a" ? ' style="border-left:4px solid var(--accent)"' : ""}><div class="body"><div class="row"><b>${esc(nameOf(p.created_by))}</b><span class="meta">${whenFull(p.created_at)}${p.edited_at ? " · edited" : ""}</span></div>${bodyHtml}</div></div>`;
 }
 function renderChat() {
   if (!me) return;
@@ -573,6 +577,14 @@ $("repForm").addEventListener("submit", e => { e.preventDefault(); quickPost("re
 $("view-chat").addEventListener("click", async e => {
   const b = e.target.closest("[data-chat]"); if (!b) return;
   const a = b.dataset.chat;
+  if (a === "edit") { annEdit = b.dataset.id; chatDel = null; return renderChat(); }
+  if (a === "edit-cancel") { annEdit = null; return renderChat(); }
+  if (a === "edit-save") {
+    const id = b.dataset.id, body = $("annEdit-" + id).value.trim(); if (!body) return;
+    const { error } = await sb.from("announcements").update({ body, edited_at: new Date().toISOString() }).eq("id", id);
+    if (error) return alert(friendly(error));
+    annEdit = null; return loadAll();
+  }
   if (a === "del") { chatDel = b.dataset.kind + ":" + b.dataset.id; return renderChat(); }
   if (a === "del-no") { chatDel = null; return renderChat(); }
   if (a === "del-yes") {
