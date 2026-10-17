@@ -175,6 +175,7 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
       <button role="tab" id="tab-daily" aria-selected="true">Daily log</button>
       <button role="tab" id="tab-log" aria-selected="false">Incidents</button>
       <button role="tab" id="tab-chat" aria-selected="false">Team 💬</button>
+      <button role="tab" id="tab-time" aria-selected="false">Time off</button>
       <button role="tab" id="tab-staff" class="priv" aria-selected="false" hidden>Staff notes 🔒</button>
       <button role="tab" id="tab-team" aria-selected="false" hidden>Managers ⚙</button>
     </div>
@@ -299,6 +300,32 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
       </div>
     </section>
 
+    <!-- TIME OFF (everyone requests; managers decide) -->
+    <section id="view-time" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="banner">No more than two stylists (or two front desk) out of the salon at the same time. A request is just a request: it isn't time off until a manager approves it.</div>
+      <div class="quick">
+        <h2 class="h2">Request time off</h2>
+        <form id="toForm">
+          <label>First day off<input id="to-from" type="date" required></label>
+          <label>Back to work<input id="to-back" type="date" required></label>
+          <label class="full">Note (optional)<input id="to-note" maxlength="500" autocomplete="off" placeholder="e.g. Family wedding"></label>
+          <div class="full form-actions"><span class="form-err" id="to-err"></span><button type="submit" class="primary">Send to managers</button></div>
+        </form>
+      </div>
+      <div id="toMgrWrap" hidden style="display:flex;flex-direction:column;gap:10px">
+        <h2 class="h2">Requests to review</h2>
+        <div class="feed" id="toPending"></div>
+        <h2 class="h2">Upcoming approved</h2>
+        <div class="feed" id="toUpcoming"></div>
+        <button type="button" class="link" id="toPastToggle"></button>
+        <div class="feed" id="toPast" hidden></div>
+      </div>
+      <div id="toMineWrap" style="display:flex;flex-direction:column;gap:10px">
+        <h2 class="h2">My requests</h2>
+        <div class="feed" id="toMine"></div>
+      </div>
+    </section>
+
     <!-- TEAM (managers) -->
     <section id="view-team" hidden style="display:flex;flex-direction:column;gap:16px">
       <div class="quick">
@@ -396,7 +423,7 @@ async function logout() { await sb.auth.signOut(); location.reload(); }
 $("logout").onclick = logout; $("logout2").onclick = logout;
 
 /* ---------- tabs & preview ---------- */
-const TABS = ["daily", "log", "chat", "staff", "team"];
+const TABS = ["daily", "log", "chat", "time", "staff", "team"];
 function setTab(t) {
   if ((t === "staff" || t === "team") && !isMgr()) t = "daily";
   if ((t === "daily" || t === "log") && !isDesk()) t = "chat";
@@ -439,18 +466,82 @@ async function loadAll() {
   res = {}; (r[4].data || []).forEach(x => res[x.incident_id] = x);
   notes = realMgr() ? (r[5].data || []) : [];
   todos = realMgr() ? (r[6].data || []) : [];
-  const [ra, rm, rr] = await Promise.all([
+  const [ra, rm, rt, rr] = await Promise.all([
     sb.from("announcements").select("*").order("created_at", {ascending: false}).limit(50),
     sb.from("messages").select("*").order("created_at", {ascending: false}).limit(200),
+    sb.from("time_off").select("*").order("off_from", {ascending: true}).limit(500),
     realMgr() ? Promise.resolve({ data: [] }) : sb.from("todos").select("*").eq("created_by", me.email).order("created_at", {ascending: false}).limit(30),
   ]);
-  anns = ra.data || []; msgs = rm.data || []; myReports = rr.data || [];
+  anns = ra.data || []; msgs = rm.data || []; timeOff = rt.data || []; myReports = rr.data || [];
   renderAll();
 }
 let reloadTimer = null;
 const scheduleReload = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(loadAll, 400); };
 
-function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); renderTodo(); renderChat(); }
+function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); renderTodo(); renderChat(); renderTime(); }
+
+/* ---------- time off ---------- */
+let timeOff = [], showPast = false;
+const dayCount = (a, b) => Math.round((new Date(b + "T12:00") - new Date(a + "T12:00")) / 864e5);
+const statusTag = st => ({ pending: `<span class="fu wait">Pending</span>`, approved: `<span class="fu ok">✓ Approved</span>`, denied: `<span class="fu" style="color:var(--crit);background:color-mix(in srgb,var(--crit) 14%,transparent)">Denied</span>`, cancelled: `<span class="fu" style="color:var(--muted)">Cancelled</span>` }[st] || "");
+function toRow(r, mgrView) {
+  const n = dayCount(r.off_from, r.back_on);
+  const overlap = mgrView ? timeOff.filter(o => o.id !== r.id && o.role === r.role && (o.status === "pending" || o.status === "approved") && o.off_from < r.back_on && r.off_from < o.back_on) : [];
+  let act = "";
+  if (mgrView && r.status === "pending") act = `<div class="actions"><button class="link done" data-to="approved" data-id="${r.id}">Approve</button><button class="link del" data-to="denied" data-id="${r.id}">Deny</button></div>`;
+  else if (mgrView && (r.status === "approved" || r.status === "denied")) act = `<div class="actions"><button class="link" data-to="pending" data-id="${r.id}">Undo decision</button></div>`;
+  else if (!mgrView && r.status === "pending" && r.created_by === me.email) act = `<div class="actions"><button class="link del" data-to="cancelled" data-id="${r.id}">Cancel request</button></div>`;
+  return `<article class="entry" style="--stripe:${r.status === "approved" ? "var(--ok)" : r.status === "pending" ? "var(--warn)" : "var(--line)"}">
+    <div class="row"><span><span class="name">${esc(nameOf(r.created_by))}</span> <span class="tag">${roleName(r.role)}</span></span>${statusTag(r.status)}</div>
+    <div><b>Off ${fmt(r.off_from)}</b> · back to work <b>${fmt(r.back_on)}</b> <span class="meta">(${n} ${n === 1 ? "day" : "days"})</span></div>
+    ${r.note ? `<p class="note">${esc(r.note)}</p>` : ""}
+    ${overlap.length ? `<div class="meta" style="color:var(--warn)">Also off then (${roleName(r.role).toLowerCase()}): ${overlap.map(o => esc(nameOf(o.created_by)) + (o.status === "pending" ? " (pending)" : "")).join(", ")}</div>` : ""}
+    <div class="meta">Sent ${whenFull(r.created_at)}${r.decided_at ? ` · ${r.status} by ${esc(nameOf(r.decided_by))} ${whenFull(r.decided_at)}` : ""}</div>${act}</article>`;
+}
+function renderTime() {
+  if (!me) return;
+  const today = daysAgo(0);
+  const pend = isMgr() ? timeOff.filter(r => r.status === "pending") : [];
+  $("tab-time").textContent = pend.length ? `Time off (${pend.length})` : "Time off";
+  $("toMgrWrap").hidden = !isMgr();
+  if (isMgr()) {
+    const upcoming = timeOff.filter(r => r.status === "approved" && r.back_on > today);
+    const past = timeOff.filter(r => !pend.includes(r) && !upcoming.includes(r)).sort((a, b) => b.off_from.localeCompare(a.off_from));
+    $("toPending").innerHTML = pend.length ? pend.map(r => toRow(r, true)).join("") : `<div class="meta">No requests waiting.</div>`;
+    $("toUpcoming").innerHTML = upcoming.length ? upcoming.map(r => toRow(r, true)).join("") : `<div class="meta">Nobody is scheduled off.</div>`;
+    $("toPastToggle").hidden = !past.length;
+    $("toPastToggle").textContent = showPast ? "Hide past & declined" : `Show past & declined (${past.length})`;
+    $("toPast").hidden = !showPast;
+    $("toPast").innerHTML = past.map(r => toRow(r, true)).join("");
+  }
+  const mine = timeOff.filter(r => r.created_by === me.email).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  $("toMineWrap").hidden = isMgr() && !mine.length;
+  $("toMine").innerHTML = mine.length ? mine.map(r => toRow(r, false)).join("") : `<div class="meta">You haven't requested any time off.</div>`;
+}
+$("toPastToggle").onclick = () => { showPast = !showPast; renderTime(); };
+$("toForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const err = t => $("to-err").textContent = t; err("");
+  const off_from = $("to-from").value, back_on = $("to-back").value;
+  if (!off_from || !back_on) return;
+  if (back_on <= off_from) return err("Back-to-work day has to be after the first day off.");
+  if (off_from < daysAgo(0)) return err("The first day off can't be in the past.");
+  const { error } = await sb.from("time_off").insert({ off_from, back_on, note: $("to-note").value.trim() || null, created_by: me.email });
+  if (error) {
+    const m = /TIMEOFF_LIMIT:\s*(\d{4}-\d{2}-\d{2})/.exec(error.message || "");
+    const who = me.role === "stylist" ? "stylists" : me.role === "front_desk" ? "front desk people" : "managers";
+    return err(m ? `Sorry, two ${who} are already requested off on ${fmt(m[1])}. Pick different dates or talk to a manager.` : friendly(error));
+  }
+  $("toForm").reset(); err(""); $("foot").textContent = "Request sent to managers."; loadAll();
+});
+$("view-time").addEventListener("click", async e => {
+  const b = e.target.closest("[data-to]"); if (!b) return;
+  const st = b.dataset.to, id = b.dataset.id;
+  const row = st === "cancelled" ? { status: "cancelled" } : st === "pending" ? { status: "pending", decided_by: null, decided_at: null } : { status: st, decided_by: me.email, decided_at: new Date().toISOString() };
+  const { error } = await sb.from("time_off").update(row).eq("id", id);
+  if (error) alert(friendly(error));
+  loadAll();
+});
 
 /* ---------- team chat, announcements, reports ---------- */
 let anns = [], msgs = [], myReports = [], chatDel = null;
