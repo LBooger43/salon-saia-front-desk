@@ -166,6 +166,7 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
   <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
     <div class="lbl" id="viewAs" hidden>Access level
       <div class="tabs">
+        <button type="button" id="va-sty" aria-selected="false">Stylist</button>
         <button type="button" id="va-desk" aria-selected="false">Front desk</button>
         <button type="button" id="va-mgr" aria-selected="true">Manager</button>
       </div>
@@ -173,10 +174,11 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
     <div class="tabs" id="tabs" role="tablist">
       <button role="tab" id="tab-daily" aria-selected="true">Daily log</button>
       <button role="tab" id="tab-log" aria-selected="false">Incidents</button>
+      <button role="tab" id="tab-chat" aria-selected="false">Team 💬</button>
       <button role="tab" id="tab-staff" class="priv" aria-selected="false" hidden>Staff notes 🔒</button>
       <button role="tab" id="tab-team" aria-selected="false" hidden>Managers ⚙</button>
     </div>
-    <div class="fu-bar" id="previewBar" hidden style="background:var(--private-soft);border-color:var(--private);color:var(--private)"><span>You're seeing what staff see.</span><button type="button" id="exitPreview" style="color:var(--private)">Back to manager view</button></div>
+    <div class="fu-bar" id="previewBar" hidden style="background:var(--private-soft);border-color:var(--private);color:var(--private)"><span id="previewText">You're seeing what staff see.</span><button type="button" id="exitPreview" style="color:var(--private)">Back to manager view</button></div>
 
     <!-- DAILY LOG -->
     <section id="view-daily" style="display:flex;flex-direction:column;gap:16px">
@@ -266,6 +268,37 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
       <div class="feed" id="staffFeed"></div>
     </section>
 
+    <!-- TEAM CHAT (everyone) -->
+    <section id="view-chat" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="quick">
+        <h2 class="h2">📣 Announcements</h2>
+        <form id="annForm" class="plain" hidden>
+          <textarea id="annText" required maxlength="2000" placeholder="Post an update for the whole team"></textarea>
+          <div class="form-actions"><span class="form-err" id="annErr"></span><button type="submit" class="primary">Post announcement</button></div>
+        </form>
+        <div class="feed" id="annFeed"></div>
+      </div>
+      <div class="quick" id="reportBox">
+        <h2 class="h2">🛠 Report an issue</h2>
+        <p class="meta" style="margin:0">Goes straight to the managers' to-do list.</p>
+        <form id="repForm" class="todo-add plain" style="flex-direction:row">
+          <input id="repText" required maxlength="500" autocomplete="off" placeholder="e.g. Out of 6N color, dryer #2 is broken">
+          <button type="submit" class="primary">Send</button>
+        </form>
+        <span class="form-err" id="repErr"></span>
+        <div class="feed" id="repFeed"></div>
+      </div>
+      <div class="quick">
+        <h2 class="h2">💬 Team chat</h2>
+        <form id="msgForm" class="todo-add plain" style="flex-direction:row">
+          <input id="msgText" required maxlength="1000" autocomplete="off" placeholder="Message the whole team">
+          <button type="submit" class="primary">Send</button>
+        </form>
+        <span class="form-err" id="msgErr"></span>
+        <div class="feed" id="msgFeed"></div>
+      </div>
+    </section>
+
     <!-- TEAM (managers) -->
     <section id="view-team" hidden style="display:flex;flex-direction:column;gap:16px">
       <div class="quick">
@@ -280,11 +313,11 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
         <div class="feed" id="todoDone" hidden></div>
       </div>
       <h2 class="h2">Team</h2>
-      <div class="banner">Add someone here, then text them the link. The first time, they tap “Create your password” and use this same email. Managers get everything; front desk gets Daily log and Incidents only.</div>
+      <div class="banner">Add someone here, then text them the link. The first time, they tap “Create your password” and use this same email. Managers get everything; front desk gets Daily log, Incidents and Team chat; stylists get Team chat only.</div>
       <form id="teamForm">
         <label>Name<input id="t-name" required maxlength="100" placeholder="e.g. Jennifer"></label>
         <label>Email<input id="t-email" type="email" required placeholder="name@example.com"></label>
-        <label class="full">Access<select id="t-role"><option value="front_desk">Front desk</option><option value="manager">Manager</option></select></label>
+        <label class="full">Access<select id="t-role"><option value="front_desk">Front desk</option><option value="stylist">Stylist</option><option value="manager">Manager</option></select></label>
         <div class="full form-actions"><span class="form-err" id="t-err"></span><button type="submit" class="primary">Add person</button></div>
       </form>
       <div class="feed" id="teamFeed"></div>
@@ -311,15 +344,17 @@ const dayLabel = s => { const w = new Date(s + "T12:00").toLocaleDateString(unde
 const stripe = {low:"var(--ok)", med:"var(--warn)", high:"var(--crit)"};
 const sevName = {low:"Minor", med:"Watch", high:"Serious"};
 const staffStripe = {"Praise":"var(--ok)","Late arrival":"var(--warn)","Left early":"var(--warn)","Called out / sick":"var(--warn)","Attitude / mood":"var(--crit)","Policy issue":"var(--crit)"};
-const roleName = r => r === "manager" ? "Manager" : "Front desk";
+const roleName = r => r === "manager" ? "Manager" : r === "stylist" ? "Stylist" : "Front desk";
 
-let session = null, me = null, previewing = false, current = "daily";
+let session = null, me = null, previewRole = "", current = "daily";
 let daily = [], fups = {}, incidents = [], res = {}, notes = [], team = [];
 let pwOpen = false;
 let dcat = "General", fuOnly = false, fuOpen = null, logFilter = "all", sev = "med", openResolve = null, confirmDel = null;
 
 const realMgr = () => me && me.role === "manager";
-const isMgr = () => realMgr() && !previewing;
+const effRole = () => previewRole || (me && me.role);
+const isMgr = () => effRole() === "manager";
+const isDesk = () => effRole() === "manager" || effRole() === "front_desk";
 const nameOf = email => { const p = team.find(x => x.email === (email || "").toLowerCase()); return p ? p.name : (email || "Someone").split("@")[0]; };
 function show(view) { ["view-login", "view-noaccess", "app"].forEach(v => $(v).hidden = v !== view); }
 function friendly(err) { return err && /row-level security|permission/i.test(err.message || "") ? "You don't have permission to do that." : "Couldn't save. Check your connection and try again."; }
@@ -361,25 +396,30 @@ async function logout() { await sb.auth.signOut(); location.reload(); }
 $("logout").onclick = logout; $("logout2").onclick = logout;
 
 /* ---------- tabs & preview ---------- */
+const TABS = ["daily", "log", "chat", "staff", "team"];
 function setTab(t) {
   if ((t === "staff" || t === "team") && !isMgr()) t = "daily";
+  if ((t === "daily" || t === "log") && !isDesk()) t = "chat";
   current = t;
-  for (const k of ["daily", "log", "staff", "team"]) { $("tab-" + k).setAttribute("aria-selected", k === t); $("view-" + k).hidden = k !== t; }
+  for (const k of TABS) { $("tab-" + k).setAttribute("aria-selected", k === t); $("view-" + k).hidden = k !== t; }
 }
-["daily", "log", "staff", "team"].forEach(k => $("tab-" + k).onclick = () => setTab(k));
+TABS.forEach(k => $("tab-" + k).onclick = () => setTab(k));
 function applyRole() {
   openResolve = null; confirmDel = null; fuOpen = null;
   $("viewAs").hidden = !realMgr();
-  $("va-desk").setAttribute("aria-selected", !isMgr()); $("va-mgr").setAttribute("aria-selected", isMgr());
-  $("previewBar").hidden = !previewing;
+  $("va-sty").setAttribute("aria-selected", effRole() === "stylist"); $("va-desk").setAttribute("aria-selected", effRole() === "front_desk"); $("va-mgr").setAttribute("aria-selected", isMgr());
+  $("previewBar").hidden = !previewRole;
+  $("previewText").textContent = `You're seeing what ${previewRole === "stylist" ? "stylists" : "front desk"} see.`;
+  $("tab-daily").hidden = !isDesk(); $("tab-log").hidden = !isDesk();
   $("tab-staff").hidden = !isMgr(); $("tab-team").hidden = !isMgr();
-  $("roleBadge").textContent = isMgr() ? "Manager" : "Front desk";
-  $("foot").textContent = isMgr() ? "Manager view. Follow-up, resolve and delete controls, Staff notes and Managers show only for managers." : "Everything you add is visible to the whole team. Keep notes factual.";
+  $("roleBadge").textContent = roleName(effRole());
+  $("foot").textContent = isMgr() ? "Manager view. Follow-up, resolve and delete controls, Staff notes and Managers show only for managers." : isDesk() ? "Everything you add is visible to the whole team. Keep notes factual." : "Announcements and chat are shared with the whole team.";
   setTab(current); renderAll();
 }
-$("va-desk").onclick = () => { previewing = true; applyRole(); };
-$("va-mgr").onclick = () => { previewing = false; applyRole(); };
-$("exitPreview").onclick = () => { previewing = false; applyRole(); };
+$("va-sty").onclick = () => { previewRole = "stylist"; applyRole(); };
+$("va-desk").onclick = () => { previewRole = "front_desk"; applyRole(); };
+$("va-mgr").onclick = () => { previewRole = ""; applyRole(); };
+$("exitPreview").onclick = () => { previewRole = ""; applyRole(); };
 
 /* ---------- data ---------- */
 async function loadAll() {
@@ -399,18 +439,64 @@ async function loadAll() {
   res = {}; (r[4].data || []).forEach(x => res[x.incident_id] = x);
   notes = realMgr() ? (r[5].data || []) : [];
   todos = realMgr() ? (r[6].data || []) : [];
+  const [ra, rm, rr] = await Promise.all([
+    sb.from("announcements").select("*").order("created_at", {ascending: false}).limit(50),
+    sb.from("messages").select("*").order("created_at", {ascending: false}).limit(200),
+    realMgr() ? Promise.resolve({ data: [] }) : sb.from("todos").select("*").eq("created_by", me.email).order("created_at", {ascending: false}).limit(30),
+  ]);
+  anns = ra.data || []; msgs = rm.data || []; myReports = rr.data || [];
   renderAll();
 }
 let reloadTimer = null;
 const scheduleReload = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(loadAll, 400); };
 
-function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); renderTodo(); }
+function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); renderTodo(); renderChat(); }
+
+/* ---------- team chat, announcements, reports ---------- */
+let anns = [], msgs = [], myReports = [], chatDel = null;
+const whenFull = s => new Date(s).toLocaleString(undefined, {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
+function postRow(p, kind) {
+  const mine = p.created_by === me.email, canDel = isMgr() || (kind === "m" && mine);
+  const key = kind + ":" + p.id;
+  const del = !canDel ? "" : chatDel === key ? `<span class="meta">Delete?</span><button class="link del" data-chat="del-yes" data-kind="${kind}" data-id="${p.id}">Yes</button><button class="link" data-chat="del-no">No</button>` : `<button class="link del" data-chat="del" data-kind="${kind}" data-id="${p.id}">Delete</button>`;
+  return `<div class="todo"${kind === "a" ? ' style="border-left:4px solid var(--accent)"' : ""}><div class="body"><div class="row"><b>${esc(nameOf(p.created_by))}</b><span class="meta">${whenFull(p.created_at)}</span></div><p class="note">${esc(p.body)}</p>${del ? `<div class="actions">${del}</div>` : ""}</div></div>`;
+}
+function renderChat() {
+  if (!me) return;
+  $("annForm").hidden = !isMgr();
+  $("annFeed").innerHTML = anns.length ? anns.map(a => postRow(a, "a")).join("") : `<div class="meta">No announcements yet.</div>`;
+  $("msgFeed").innerHTML = msgs.length ? msgs.map(m => postRow(m, "m")).join("") : `<div class="meta">No messages yet. Say hi to the team.</div>`;
+  $("reportBox").hidden = isMgr();
+  $("repFeed").innerHTML = myReports.map(t => `<div class="todo${t.done ? " done" : ""}"><div class="body"><p class="note">${esc(t.task)}</p><span class="meta">${t.done ? "✓ Done" + (t.done_at ? " · " + whenShort(t.done_at) : "") : "Sent to managers · " + whenShort(t.created_at)}</span></div></div>`).join("");
+}
+async function quickPost(inputId, errId, table, row) {
+  $(errId).textContent = "";
+  const v = $(inputId).value.trim(); if (!v) return;
+  const { error } = await sb.from(table).insert(row(v));
+  if (error) { $(errId).textContent = friendly(error); return; }
+  $(inputId).value = ""; loadAll();
+}
+$("annForm").addEventListener("submit", e => { e.preventDefault(); quickPost("annText", "annErr", "announcements", body => ({ body, created_by: me.email })); });
+$("msgForm").addEventListener("submit", e => { e.preventDefault(); quickPost("msgText", "msgErr", "messages", body => ({ body, created_by: me.email })); });
+$("repForm").addEventListener("submit", e => { e.preventDefault(); quickPost("repText", "repErr", "todos", task => ({ task, reported: true, created_by: me.email })); });
+$("view-chat").addEventListener("click", async e => {
+  const b = e.target.closest("[data-chat]"); if (!b) return;
+  const a = b.dataset.chat;
+  if (a === "del") { chatDel = b.dataset.kind + ":" + b.dataset.id; return renderChat(); }
+  if (a === "del-no") { chatDel = null; return renderChat(); }
+  if (a === "del-yes") {
+    chatDel = null;
+    const { error } = await sb.from(b.dataset.kind === "a" ? "announcements" : "messages").delete().eq("id", b.dataset.id);
+    if (error) alert(friendly(error));
+    loadAll();
+  }
+});
 
 /* ---------- manager to-do ---------- */
 let todos = [], showDone = false, todoDel = null;
 const whenShort = s => new Date(s).toLocaleDateString(undefined, {month: "short", day: "numeric"});
 function todoRow(t) {
-  const meta = t.done ? `Done by ${esc(nameOf(t.done_by))} · ${whenShort(t.done_at)}` : `Added by ${esc(nameOf(t.created_by))} · ${whenShort(t.created_at)}`;
+  const meta = t.done ? `Done by ${esc(nameOf(t.done_by))} · ${whenShort(t.done_at)}` : `${t.reported ? "Reported" : "Added"} by ${esc(nameOf(t.created_by))} · ${whenShort(t.created_at)}`;
   const del = todoDel === t.id ? `<span class="meta">Delete?</span><button class="link del" data-todo="del-yes" data-id="${t.id}">Yes</button><button class="link" data-todo="del-no">No</button>` : `<button class="link del" data-todo="del" data-id="${t.id}">Delete</button>`;
   return `<div class="todo${t.done ? " done" : ""}"><input type="checkbox" data-todo="toggle" data-id="${t.id}"${t.done ? " checked" : ""} aria-label="Mark done"><div class="body"><p class="note">${esc(t.task)}</p><div class="actions"><span class="meta">${meta}</span>${del}</div></div></div>`;
 }
@@ -601,9 +687,15 @@ function renderTeam() {
   if (!isMgr()) { $("teamFeed").innerHTML = ""; return; }
   $("teamFeed").innerHTML = team.map(p => `<article class="entry" style="--stripe:${p.role === "manager" ? "var(--accent)" : "var(--line)"}">
     <div class="row"><span><span class="name">${esc(p.name)}</span> <span class="meta">${esc(p.email)}</span></span><span class="tag">${roleName(p.role)}</span></div>
-    ${p.email === me.email ? `<div class="actions"><span class="meta">This is you.</span><button class="link" data-tact="mypw">Change my password</button></div>${pwOpen ? `<div class="fu-box"><input id="myPw" type="password" minlength="6" autocomplete="new-password" placeholder="New password (6+ characters)"><div class="actions"><button class="primary" data-tact="mypw-save">Save password</button><button class="link" data-tact="mypw-cancel">Cancel</button><span class="form-err" id="myPwErr"></span></div></div>` : ""}` : confirmDel === "r:" + p.email ? `<div class="actions"><span class="meta">Reset ${esc(p.name)}'s password? They'll create a new one next time they sign in.</span><button class="link del" data-tact="reset-yes" data-email="${esc(p.email)}">Yes, reset</button><button class="link" data-tact="rm-no">Cancel</button></div>` : confirmDel === "t:" + p.email ? `<div class="actions"><span class="meta">Remove ${esc(p.name)}? They lose access right away.</span><button class="link del" data-tact="rm-yes" data-email="${esc(p.email)}">Yes, remove</button><button class="link" data-tact="rm-no">Keep</button></div>` : `<div class="actions"><button class="link" data-tact="swap" data-email="${esc(p.email)}">Make ${p.role === "manager" ? "front desk" : "manager"}</button><button class="link" data-tact="reset" data-email="${esc(p.email)}">Reset password</button><button class="link del" data-tact="rm" data-email="${esc(p.email)}">Remove</button></div>`}
+    ${p.email === me.email ? `<div class="actions"><span class="meta">This is you.</span><button class="link" data-tact="mypw">Change my password</button></div>${pwOpen ? `<div class="fu-box"><input id="myPw" type="password" minlength="6" autocomplete="new-password" placeholder="New password (6+ characters)"><div class="actions"><button class="primary" data-tact="mypw-save">Save password</button><button class="link" data-tact="mypw-cancel">Cancel</button><span class="form-err" id="myPwErr"></span></div></div>` : ""}` : confirmDel === "r:" + p.email ? `<div class="actions"><span class="meta">Reset ${esc(p.name)}'s password? They'll create a new one next time they sign in.</span><button class="link del" data-tact="reset-yes" data-email="${esc(p.email)}">Yes, reset</button><button class="link" data-tact="rm-no">Cancel</button></div>` : confirmDel === "t:" + p.email ? `<div class="actions"><span class="meta">Remove ${esc(p.name)}? They lose access right away.</span><button class="link del" data-tact="rm-yes" data-email="${esc(p.email)}">Yes, remove</button><button class="link" data-tact="rm-no">Keep</button></div>` : `<div class="actions"><select data-role-email="${esc(p.email)}" aria-label="Access level" style="width:auto;padding:4px 8px;font-size:.82rem">${["front_desk", "stylist", "manager"].map(r => `<option value="${r}"${r === p.role ? " selected" : ""}>${roleName(r)}</option>`).join("")}</select><button class="link" data-tact="reset" data-email="${esc(p.email)}">Reset password</button><button class="link del" data-tact="rm" data-email="${esc(p.email)}">Remove</button></div>`}
   </article>`).join("");
 }
+$("teamFeed").addEventListener("change", async e => {
+  const sel = e.target.closest("[data-role-email]"); if (!sel || !isMgr()) return;
+  const { error } = await sb.from("staff").update({ role: sel.value }).eq("email", sel.dataset.roleEmail);
+  if (error) alert(friendly(error));
+  loadAll();
+});
 $("teamForm").addEventListener("submit", async e => {
   e.preventDefault(); $("t-err").textContent = "";
   const row = { name: $("t-name").value.trim(), email: $("t-email").value.trim().toLowerCase(), role: $("t-role").value };
