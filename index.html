@@ -121,6 +121,11 @@ textarea{min-height:80px;resize:vertical}
 .h2{font-family:var(--display);font-size:1.25rem;margin:0}
 form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column;gap:8px}
 #view-login{max-width:440px;margin:24px auto 0;width:100%;box-sizing:border-box}
+.todo-add{display:flex;gap:8px}.todo-add input{flex:1}
+.todo{display:flex;align-items:flex-start;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.todo input[type=checkbox]{width:22px;height:22px;margin:1px 0 0;flex:none;accent-color:var(--ok);cursor:pointer}
+.todo .body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.todo.done .note{text-decoration:line-through;color:var(--muted)}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
 </head>
@@ -263,6 +268,18 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
 
     <!-- TEAM (managers) -->
     <section id="view-team" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="quick">
+        <h2 class="h2">To-do list</h2>
+        <form id="todoForm" class="todo-add plain" style="flex-direction:row">
+          <input id="todoText" required maxlength="500" autocomplete="off" placeholder="e.g. Zinc faucet needs to be fixed">
+          <button type="submit" class="primary">Add</button>
+        </form>
+        <span class="form-err" id="todoErr"></span>
+        <div class="feed" id="todoOpen"></div>
+        <button type="button" class="link" id="todoDoneToggle" hidden></button>
+        <div class="feed" id="todoDone" hidden></div>
+      </div>
+      <h2 class="h2">Team</h2>
       <div class="banner">Add someone here, then text them the link. The first time, they tap “Create your password” and use this same email. Managers get everything; front desk gets Daily log and Incidents only.</div>
       <form id="teamForm">
         <label>Name<input id="t-name" required maxlength="100" placeholder="e.g. Jennifer"></label>
@@ -374,18 +391,60 @@ async function loadAll() {
     sb.from("resolutions").select("*"),
   ];
   if (realMgr()) q.push(sb.from("staff_notes").select("*").order("note_date", {ascending: false}).order("created_at", {ascending: false}).limit(1000));
+  if (realMgr()) q.push(sb.from("todos").select("*").order("created_at", {ascending: false}).limit(500));
   const r = await Promise.all(q);
   team = r[0].data || []; daily = r[1].data || [];
   fups = {}; (r[2].data || []).forEach(f => fups[f.log_id] = f);
   incidents = r[3].data || [];
   res = {}; (r[4].data || []).forEach(x => res[x.incident_id] = x);
   notes = realMgr() ? (r[5].data || []) : [];
+  todos = realMgr() ? (r[6].data || []) : [];
   renderAll();
 }
 let reloadTimer = null;
 const scheduleReload = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(loadAll, 400); };
 
-function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); }
+function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); renderTodo(); }
+
+/* ---------- manager to-do ---------- */
+let todos = [], showDone = false, todoDel = null;
+const whenShort = s => new Date(s).toLocaleDateString(undefined, {month: "short", day: "numeric"});
+function todoRow(t) {
+  const meta = t.done ? `Done by ${esc(nameOf(t.done_by))} · ${whenShort(t.done_at)}` : `Added by ${esc(nameOf(t.created_by))} · ${whenShort(t.created_at)}`;
+  const del = todoDel === t.id ? `<span class="meta">Delete?</span><button class="link del" data-todo="del-yes" data-id="${t.id}">Yes</button><button class="link" data-todo="del-no">No</button>` : `<button class="link del" data-todo="del" data-id="${t.id}">Delete</button>`;
+  return `<div class="todo${t.done ? " done" : ""}"><input type="checkbox" data-todo="toggle" data-id="${t.id}"${t.done ? " checked" : ""} aria-label="Mark done"><div class="body"><p class="note">${esc(t.task)}</p><div class="actions"><span class="meta">${meta}</span>${del}</div></div></div>`;
+}
+function renderTodo() {
+  if (!isMgr()) { $("todoOpen").innerHTML = ""; $("todoDone").innerHTML = ""; $("tab-team").textContent = "Managers ⚙"; return; }
+  const open = todos.filter(t => !t.done), done = todos.filter(t => t.done).sort((a, b) => (b.done_at || "").localeCompare(a.done_at || ""));
+  $("tab-team").textContent = open.length ? `Managers ⚙ (${open.length})` : "Managers ⚙";
+  $("todoOpen").innerHTML = open.length ? open.map(todoRow).join("") : `<div class="meta">Nothing on the list. Add something above.</div>`;
+  $("todoDoneToggle").hidden = !done.length;
+  $("todoDoneToggle").textContent = showDone ? "Hide done" : `Show done (${done.length})`;
+  $("todoDone").hidden = !showDone;
+  $("todoDone").innerHTML = done.map(todoRow).join("");
+}
+$("todoDoneToggle").onclick = () => { showDone = !showDone; renderTodo(); };
+$("todoForm").addEventListener("submit", async e => {
+  e.preventDefault(); $("todoErr").textContent = "";
+  const task = $("todoText").value.trim(); if (!task) return;
+  const { error } = await sb.from("todos").insert({ task, created_by: me.email });
+  if (error) { $("todoErr").textContent = friendly(error); return; }
+  $("todoText").value = ""; loadAll();
+});
+$("view-team").addEventListener("click", async e => {
+  const b = e.target.closest("[data-todo]"); if (!b || !isMgr()) return;
+  const a = b.dataset.todo, id = b.dataset.id; let error = null;
+  if (a === "toggle") {
+    const t = todos.find(x => x.id === id); const done = !t.done;
+    t.done = done; t.done_by = me.email; t.done_at = new Date().toISOString(); renderTodo();
+    ({ error } = await sb.from("todos").update(done ? { done: true, done_by: me.email, done_at: t.done_at } : { done: false, done_by: null, done_at: null }).eq("id", id));
+  } else if (a === "del") { todoDel = id; return renderTodo(); }
+  else if (a === "del-no") { todoDel = null; return renderTodo(); }
+  else if (a === "del-yes") { todoDel = null; ({ error } = await sb.from("todos").delete().eq("id", id)); }
+  if (error) alert(friendly(error));
+  loadAll();
+});
 
 /* ---------- daily log ---------- */
 function mergedDaily() { return daily.map(d => { const f = fups[d.id] || {}; return {...d, fu: !!(d.needs_followup || f.flagged), fuDone: !!f.done, fuNote: f.note || ""}; }); }
