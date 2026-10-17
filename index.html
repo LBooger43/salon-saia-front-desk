@@ -139,14 +139,19 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
 
   <!-- SIGN IN -->
   <section id="view-login" class="quick" hidden>
-    <h2 class="h2">Sign in</h2>
-    <p class="meta" id="loginHelp">Enter your work email. We'll email you a sign-in link — no password needed.</p>
+    <h2 class="h2" id="loginTitle">Sign in</h2>
+    <p class="meta" id="loginHelp">Use the email your manager added you with.</p>
     <form id="loginForm" class="plain">
       <label for="loginEmail">Email</label>
       <input id="loginEmail" type="email" required autocomplete="email" placeholder="you@example.com">
-      <div class="form-actions"><span class="form-err" id="loginErr"></span><button type="submit" class="primary">Email me a sign-in link</button></div>
+      <label for="loginPw">Password</label>
+      <input id="loginPw" type="password" required minlength="6" autocomplete="current-password" placeholder="Your password">
+      <div id="pw2Wrap" hidden><label for="loginPw2">Type it again</label>
+      <input id="loginPw2" type="password" minlength="6" autocomplete="new-password" placeholder="Same password again"></div>
+      <div class="form-actions"><span class="form-err" id="loginErr"></span><button type="submit" class="primary" id="loginBtn">Sign in</button></div>
     </form>
-    <div id="loginSent" hidden class="banner">Check your email for a link from Supabase and tap it on this device. You can close this page.</div>
+    <p class="meta" style="margin-top:12px"><button type="button" class="link" id="modeToggle">First time here? Create your password</button></p>
+    <p class="meta">Forgot your password? Ask a manager to reset it.</p>
   </section>
 
   <!-- NO ACCESS -->
@@ -258,7 +263,7 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
 
     <!-- TEAM (managers) -->
     <section id="view-team" hidden style="display:flex;flex-direction:column;gap:16px">
-      <div class="banner">Add someone here, then they sign in with that email. Managers get everything; front desk gets Daily log and Incidents only.</div>
+      <div class="banner">Add someone here, then text them the link. The first time, they tap “Create your password” and use this same email. Managers get everything; front desk gets Daily log and Incidents only.</div>
       <form id="teamForm">
         <label>Name<input id="t-name" required maxlength="100" placeholder="e.g. Jennifer"></label>
         <label>Email<input id="t-email" type="email" required placeholder="name@example.com"></label>
@@ -293,6 +298,7 @@ const roleName = r => r === "manager" ? "Manager" : "Front desk";
 
 let session = null, me = null, previewing = false, current = "daily";
 let daily = [], fups = {}, incidents = [], res = {}, notes = [], team = [];
+let pwOpen = false;
 let dcat = "General", fuOnly = false, fuOpen = null, logFilter = "all", sev = "med", openResolve = null, confirmDel = null;
 
 const realMgr = () => me && me.role === "manager";
@@ -302,13 +308,37 @@ function show(view) { ["view-login", "view-noaccess", "app"].forEach(v => $(v).h
 function friendly(err) { return err && /row-level security|permission/i.test(err.message || "") ? "You don't have permission to do that." : "Couldn't save. Check your connection and try again."; }
 
 /* ---------- sign in / out ---------- */
+let signupMode = false;
+function setMode(m) {
+  signupMode = m;
+  $("loginTitle").textContent = m ? "Create your password" : "Sign in";
+  $("loginHelp").textContent = m ? "First time? Enter the email your manager added and pick a password (6+ characters)." : "Use the email your manager added you with.";
+  $("pw2Wrap").hidden = !m; $("loginPw2").required = m;
+  $("loginPw").autocomplete = m ? "new-password" : "current-password";
+  $("loginBtn").textContent = m ? "Create password & sign in" : "Sign in";
+  $("modeToggle").textContent = m ? "Already have a password? Sign in" : "First time here? Create your password";
+  $("loginErr").textContent = "";
+}
+$("modeToggle").onclick = () => setMode(!signupMode);
 $("loginForm").addEventListener("submit", async e => {
   e.preventDefault();
-  $("loginErr").textContent = "";
-  const email = $("loginEmail").value.trim().toLowerCase();
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
-  if (error) { $("loginErr").textContent = /rate/i.test(error.message) ? "Too many sign-in emails just now. Wait a few minutes and try again." : "Couldn't send the email. Check the address and try again."; return; }
-  $("loginForm").hidden = true; $("loginHelp").hidden = true; $("loginSent").hidden = false;
+  const err = t => $("loginErr").textContent = t;
+  err("");
+  const email = $("loginEmail").value.trim().toLowerCase(), password = $("loginPw").value;
+  $("loginBtn").disabled = true;
+  try {
+    if (!signupMode) {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) err(/invalid/i.test(error.message) ? "Email or password is wrong. First time? Tap “Create your password” below." : "Couldn't sign in. Check your connection and try again.");
+      return;
+    }
+    if (password !== $("loginPw2").value) return err("The two passwords don't match.");
+    const { data: ok } = await sb.rpc("is_invited", { p_email: email });
+    if (!ok) return err("That email isn't on the Salon Saia team yet. Ask a manager to add you.");
+    const { data, error } = await sb.auth.signUp({ email, password });
+    if (error) return err(/already/i.test(error.message) ? "This email already has a password. Sign in instead, or ask a manager to reset it." : /password/i.test(error.message) ? "Pick a longer password (at least 6 characters)." : "Couldn't create your password. Try again.");
+    if (!data.session) return err("Account created, but sign-in is still being set up. Tell a manager.");
+  } finally { $("loginBtn").disabled = false; }
 });
 async function logout() { await sb.auth.signOut(); location.reload(); }
 $("logout").onclick = logout; $("logout2").onclick = logout;
@@ -512,7 +542,7 @@ function renderTeam() {
   if (!isMgr()) { $("teamFeed").innerHTML = ""; return; }
   $("teamFeed").innerHTML = team.map(p => `<article class="entry" style="--stripe:${p.role === "manager" ? "var(--accent)" : "var(--line)"}">
     <div class="row"><span><span class="name">${esc(p.name)}</span> <span class="meta">${esc(p.email)}</span></span><span class="tag">${roleName(p.role)}</span></div>
-    ${p.email === me.email ? `<span class="meta">This is you.</span>` : confirmDel === "t:" + p.email ? `<div class="actions"><span class="meta">Remove ${esc(p.name)}? They lose access right away.</span><button class="link del" data-tact="rm-yes" data-email="${esc(p.email)}">Yes, remove</button><button class="link" data-tact="rm-no">Keep</button></div>` : `<div class="actions"><button class="link" data-tact="swap" data-email="${esc(p.email)}">Make ${p.role === "manager" ? "front desk" : "manager"}</button><button class="link del" data-tact="rm" data-email="${esc(p.email)}">Remove</button></div>`}
+    ${p.email === me.email ? `<div class="actions"><span class="meta">This is you.</span><button class="link" data-tact="mypw">Change my password</button></div>${pwOpen ? `<div class="fu-box"><input id="myPw" type="password" minlength="6" autocomplete="new-password" placeholder="New password (6+ characters)"><div class="actions"><button class="primary" data-tact="mypw-save">Save password</button><button class="link" data-tact="mypw-cancel">Cancel</button><span class="form-err" id="myPwErr"></span></div></div>` : ""}` : confirmDel === "r:" + p.email ? `<div class="actions"><span class="meta">Reset ${esc(p.name)}'s password? They'll create a new one next time they sign in.</span><button class="link del" data-tact="reset-yes" data-email="${esc(p.email)}">Yes, reset</button><button class="link" data-tact="rm-no">Cancel</button></div>` : confirmDel === "t:" + p.email ? `<div class="actions"><span class="meta">Remove ${esc(p.name)}? They lose access right away.</span><button class="link del" data-tact="rm-yes" data-email="${esc(p.email)}">Yes, remove</button><button class="link" data-tact="rm-no">Keep</button></div>` : `<div class="actions"><button class="link" data-tact="swap" data-email="${esc(p.email)}">Make ${p.role === "manager" ? "front desk" : "manager"}</button><button class="link" data-tact="reset" data-email="${esc(p.email)}">Reset password</button><button class="link del" data-tact="rm" data-email="${esc(p.email)}">Remove</button></div>`}
   </article>`).join("");
 }
 $("teamForm").addEventListener("submit", async e => {
@@ -524,6 +554,17 @@ $("teamForm").addEventListener("submit", async e => {
 });
 $("teamFeed").addEventListener("click", async e => {
   const b = e.target.closest("[data-tact]"); if (!b) return; const a = b.dataset.tact, email = b.dataset.email; let error = null;
+  if (a === "mypw") { pwOpen = true; return renderTeam(); }
+  if (a === "mypw-cancel") { pwOpen = false; return renderTeam(); }
+  if (a === "mypw-save") {
+    const pw = $("myPw").value;
+    if (pw.length < 6) { $("myPwErr").textContent = "At least 6 characters."; return; }
+    const { error: e2 } = await sb.auth.updateUser({ password: pw });
+    if (e2) { $("myPwErr").textContent = /different/i.test(e2.message) ? "That's already your password." : "Couldn't save. Try again."; return; }
+    pwOpen = false; renderTeam(); $("foot").textContent = "Password saved."; return;
+  }
+  if (a === "reset") { confirmDel = "r:" + email; return renderTeam(); }
+  if (a === "reset-yes") { confirmDel = null; const { error: e3 } = await sb.rpc("reset_login", { p_email: email }); alert(e3 ? "Couldn't reset. Try again." : "Done. They can now tap “Create your password” on the sign-in screen."); return renderTeam(); }
   if (a === "rm") confirmDel = "t:" + email; else if (a === "rm-no") confirmDel = null;
   else if (a === "rm-yes") { confirmDel = null; ({ error } = await sb.from("staff").delete().eq("email", email)); }
   else if (a === "swap") { const p = team.find(x => x.email === email); ({ error } = await sb.from("staff").update({ role: p.role === "manager" ? "front_desk" : "manager" }).eq("email", email)); }
