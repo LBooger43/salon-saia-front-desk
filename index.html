@@ -126,6 +126,7 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
 .cam.inline{position:static;flex:none}
 .pprev{display:flex;align-items:center;gap:10px}.pprev:empty{display:none}.pprev img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
 .daterow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}.daterow label{flex:1;min-width:130px}
+.supgrp{display:flex;flex-direction:column;gap:8px}.supgrp h3{margin:6px 0 0;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .photo{display:block;max-width:100%;max-height:240px;border-radius:10px;border:1px solid var(--line);margin-top:4px}
 .todo-add{display:flex;gap:8px}.todo-add input{flex:1}
 .todo{display:flex;align-items:flex-start;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
@@ -180,6 +181,7 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
     <div class="tabs" id="tabs" role="tablist">
       <button role="tab" id="tab-daily" aria-selected="true">Daily log</button>
       <button role="tab" id="tab-log" aria-selected="false">Incidents</button>
+      <button role="tab" id="tab-supplies" aria-selected="false">Supplies</button>
       <button role="tab" id="tab-chat" aria-selected="false">Team 💬</button>
       <button role="tab" id="tab-time" aria-selected="false">Time off</button>
       <button role="tab" id="tab-staff" class="priv" aria-selected="false" hidden>Staff notes 🔒</button>
@@ -277,6 +279,32 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
         <div class="tally" id="s-tally"></div>
       </div>
       <div class="feed" id="staffFeed"></div>
+    </section>
+
+    <!-- SUPPLIES (front desk + managers) -->
+    <section id="view-supplies" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="quick">
+        <h2 class="h2">Shopping list</h2>
+        <p class="meta" style="margin:0">Check items off once they've been bought.</p>
+        <div class="feed" id="supOpen"></div>
+      </div>
+      <div class="quick">
+        <div class="row"><h2 class="h2">Running low?</h2><button type="button" class="link" id="supEditToggle" hidden>Edit items</button></div>
+        <p class="meta" style="margin:0" id="supHelp">Tap anything that's running low to add it to the shopping list.</p>
+        <div id="supCatalog" style="display:flex;flex-direction:column;gap:12px"></div>
+        <form id="supEditForm" class="plain" hidden>
+          <label>Add an item to the list<span class="daterow"><input id="supNewCat" list="supCats" maxlength="60" required placeholder="Category (e.g. Snacks)"><input id="supNewName" maxlength="100" required placeholder="Item (e.g. Pretzels)"></span></label>
+          <datalist id="supCats"></datalist>
+          <div class="form-actions"><span class="form-err" id="supEditErr"></span><button type="submit" class="primary">Add item</button></div>
+        </form>
+        <form id="supOtherForm" class="plain">
+          <label for="supOther">Something else</label>
+          <div class="todo-add"><input id="supOther" maxlength="200" required autocomplete="off" placeholder="e.g. Oat milk x4, light bulbs for station 3"><button type="submit" class="primary">Add</button></div>
+          <span class="form-err" id="supErr"></span>
+        </form>
+      </div>
+      <button type="button" class="link" id="supBoughtToggle" hidden></button>
+      <div class="feed" id="supBought" hidden></div>
     </section>
 
     <!-- TEAM CHAT (everyone) -->
@@ -438,10 +466,10 @@ async function logout() { await sb.auth.signOut(); location.reload(); }
 $("logout").onclick = logout; $("logout2").onclick = logout;
 
 /* ---------- tabs & preview ---------- */
-const TABS = ["daily", "log", "chat", "time", "staff", "team"];
+const TABS = ["daily", "log", "supplies", "chat", "time", "staff", "team"];
 function setTab(t) {
   if ((t === "staff" || t === "team") && !isMgr()) t = "daily";
-  if ((t === "daily" || t === "log") && !isDesk()) t = "chat";
+  if ((t === "daily" || t === "log" || t === "supplies") && !isDesk()) t = "chat";
   current = t;
   for (const k of TABS) { $("tab-" + k).setAttribute("aria-selected", k === t); $("view-" + k).hidden = k !== t; }
 }
@@ -452,7 +480,7 @@ function applyRole() {
   $("va-sty").setAttribute("aria-selected", effRole() === "stylist"); $("va-desk").setAttribute("aria-selected", effRole() === "front_desk"); $("va-mgr").setAttribute("aria-selected", isMgr());
   $("previewBar").hidden = !previewRole;
   $("previewText").textContent = `You're seeing what ${previewRole === "stylist" ? "stylists" : "front desk"} see.`;
-  $("tab-daily").hidden = !isDesk(); $("tab-log").hidden = !isDesk();
+  $("tab-daily").hidden = !isDesk(); $("tab-log").hidden = !isDesk(); $("tab-supplies").hidden = !isDesk();
   $("tab-staff").hidden = !isMgr(); $("tab-team").hidden = !isMgr();
   $("roleBadge").textContent = roleName(effRole());
   $("foot").textContent = isMgr() ? "Manager view. Follow-up, resolve and delete controls, Staff notes and Managers show only for managers." : isDesk() ? "Everything you add is visible to the whole team. Keep notes factual." : "Announcements and chat are shared with the whole team.";
@@ -550,13 +578,16 @@ async function loadAll() {
   res = {}; (r[4].data || []).forEach(x => res[x.incident_id] = x);
   notes = realMgr() ? (r[5].data || []) : [];
   todos = realMgr() ? (r[6].data || []) : [];
-  const [ra, rm, rt, rr] = await Promise.all([
+  const since14 = new Date(Date.now() - 14 * 864e5).toISOString();
+  const [ra, rm, rt, rr, rsi, rsn] = await Promise.all([
     sb.from("announcements").select("*").order("created_at", {ascending: false}).limit(50),
     sb.from("messages").select("*").order("created_at", {ascending: false}).limit(200),
     sb.from("time_off").select("*").order("off_from", {ascending: true}).limit(500),
     realMgr() ? Promise.resolve({ data: [] }) : sb.from("todos").select("*").eq("created_by", me.email).order("created_at", {ascending: false}).limit(30),
+    sb.from("supply_items").select("*").eq("active", true).order("sort").order("name"),
+    sb.from("supply_needs").select("*").or(`bought.eq.false,bought_at.gte."${since14}"`).order("requested_at", {ascending: false}).limit(500),
   ]);
-  anns = ra.data || []; msgs = rm.data || []; timeOff = rt.data || []; myReports = rr.data || [];
+  anns = ra.data || []; msgs = rm.data || []; timeOff = rt.data || []; myReports = rr.data || []; supItems = rsi.data || []; supNeeds = rsn.data || [];
   await Promise.all([fetchRange("d"), fetchRange("l")]);
   await signPhotos([...daily, ...incidents, ...msgs, ...myReports, ...todos, ...(rangeData.d || []), ...(rangeData.l || [])].map(x => x.photo));
   renderAll();
@@ -564,7 +595,81 @@ async function loadAll() {
 let reloadTimer = null;
 const scheduleReload = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(loadAll, 400); };
 
-function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); renderTodo(); renderChat(); renderTime(); }
+function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); renderTodo(); renderChat(); renderTime(); renderSupplies(); }
+
+/* ---------- supplies ---------- */
+let supItems = [], supNeeds = [], supEdit = false, showBought = false;
+function supGroups(rows, catOf) {
+  const order = [], g = {};
+  rows.forEach(r => { const c = catOf(r) || "Other"; if (!g[c]) { g[c] = []; order.push(c); } g[c].push(r); });
+  return order.map(c => [c, g[c]]);
+}
+function renderSupplies() {
+  if (!me) return;
+  if (!isDesk()) { $("supOpen").innerHTML = ""; $("supCatalog").innerHTML = ""; return; }
+  const open = supNeeds.filter(n => !n.bought), bought = supNeeds.filter(n => n.bought).sort((a, b) => (b.bought_at || "").localeCompare(a.bought_at || ""));
+  $("tab-supplies").textContent = open.length ? `Supplies (${open.length})` : "Supplies";
+  const catOrder = [...new Set(supItems.map(i => i.category))];
+  const openSorted = [...open].sort((a, b) => { const x = catOrder.indexOf(a.category), y = catOrder.indexOf(b.category); return (x < 0 ? 99 : x) - (y < 0 ? 99 : y); });
+  $("supOpen").innerHTML = open.length ? supGroups(openSorted, n => n.category).map(([c, rows]) => `<div class="supgrp"><h3>${esc(c)}</h3>${rows.map(n => {
+    const canRemove = isMgr() || n.requested_by === me.email;
+    return `<div class="todo"><input type="checkbox" data-sup="buy" data-id="${n.id}" aria-label="Mark ${esc(n.item_name)} bought"><div class="body"><p class="note">${esc(n.item_name)}</p><div class="actions"><span class="meta">Asked by ${esc(nameOf(n.requested_by))} · ${whenShort(n.requested_at)}</span>${canRemove ? `<button class="link del" data-sup="remove" data-id="${n.id}">Remove</button>` : ""}</div></div></div>`;
+  }).join("")}</div>`).join("") : `<div class="meta">Nothing needed right now.</div>`;
+  const onList = new Set(open.filter(n => n.item_id).map(n => n.item_id));
+  $("supEditToggle").hidden = !isMgr();
+  $("supEditToggle").textContent = supEdit ? "Done editing" : "Edit items";
+  $("supEditForm").hidden = !(isMgr() && supEdit);
+  $("supHelp").textContent = supEdit ? "Tap × to take an item off this list for good, or add a new one below." : "Tap anything that's running low to add it to the shopping list.";
+  $("supCats").innerHTML = catOrder.map(c => `<option value="${esc(c)}">`).join("");
+  $("supCatalog").innerHTML = supItems.length ? supGroups(supItems, i => i.category).map(([c, rows]) => `<div class="supgrp"><h3>${esc(c)}</h3><div class="cats">${rows.map(i =>
+    supEdit && isMgr()
+      ? `<button type="button" class="cat" data-sup="retire" data-id="${i.id}" aria-label="Remove ${esc(i.name)} from the list">${esc(i.name)} ×</button>`
+      : `<button type="button" class="cat" data-sup="add" data-id="${i.id}" aria-pressed="${onList.has(i.id)}">${onList.has(i.id) ? "✓ " : ""}${esc(i.name)}</button>`
+  ).join("")}</div></div>`).join("") : `<div class="meta">No items yet.</div>`;
+  $("supBoughtToggle").hidden = !bought.length;
+  $("supBoughtToggle").textContent = showBought ? "Hide recently bought" : `Recently bought (${bought.length})`;
+  $("supBought").hidden = !showBought;
+  $("supBought").innerHTML = bought.map(n => `<div class="todo done"><div class="body"><p class="note">${esc(n.item_name)}</p><div class="actions"><span class="meta">Bought by ${esc(nameOf(n.bought_by))} · ${whenShort(n.bought_at)}</span><button class="link" data-sup="unbuy" data-id="${n.id}">Undo</button></div></div></div>`).join("");
+}
+async function addNeed(row) {
+  const { error } = await sb.from("supply_needs").insert({ ...row, requested_by: me.email });
+  if (error) { $("supErr").textContent = friendly(error); return false; }
+  return true;
+}
+$("supEditToggle").onclick = () => { supEdit = !supEdit; renderSupplies(); };
+$("supBoughtToggle").onclick = () => { showBought = !showBought; renderSupplies(); };
+$("supOtherForm").addEventListener("submit", async e => {
+  e.preventDefault(); $("supErr").textContent = "";
+  const v = $("supOther").value.trim(); if (!v) return;
+  if (await addNeed({ item_name: v, category: "Other" })) { $("supOther").value = ""; loadAll(); }
+});
+$("supEditForm").addEventListener("submit", async e => {
+  e.preventDefault(); $("supEditErr").textContent = "";
+  const category = $("supNewCat").value.trim(), name = $("supNewName").value.trim(); if (!category || !name) return;
+  const sort = supItems.filter(i => i.category === category).reduce((m, i) => Math.max(m, i.sort || 0), supItems.reduce((m, i) => Math.max(m, i.sort || 0), 0)) + 1;
+  const { error } = await sb.from("supply_items").insert({ category, name, sort });
+  if (error) { $("supEditErr").textContent = friendly(error); return; }
+  $("supNewName").value = ""; loadAll();
+});
+$("view-supplies").addEventListener("click", async e => {
+  const b = e.target.closest("[data-sup]"); if (!b) return;
+  const a = b.dataset.sup, id = b.dataset.id; let error = null;
+  $("supErr").textContent = "";
+  if (a === "add") {
+    const item = supItems.find(i => i.id === id); if (!item) return;
+    const existing = supNeeds.find(n => !n.bought && n.item_id === id);
+    if (existing) {
+      if (!(isMgr() || existing.requested_by === me.email)) { $("supErr").textContent = `${item.name} is already on the list.`; return; }
+      ({ error } = await sb.from("supply_needs").delete().eq("id", existing.id));
+    } else if (!(await addNeed({ item_id: id, item_name: item.name, category: item.category }))) return;
+  }
+  else if (a === "remove") ({ error } = await sb.from("supply_needs").delete().eq("id", id));
+  else if (a === "buy") ({ error } = await sb.from("supply_needs").update({ bought: true, bought_by: me.email, bought_at: new Date().toISOString() }).eq("id", id));
+  else if (a === "unbuy") ({ error } = await sb.from("supply_needs").update({ bought: false, bought_by: null, bought_at: null }).eq("id", id));
+  else if (a === "retire") ({ error } = await sb.from("supply_items").update({ active: false }).eq("id", id));
+  if (error) alert(friendly(error));
+  loadAll();
+});
 
 /* ---------- time off ---------- */
 let timeOff = [], showPast = false;
