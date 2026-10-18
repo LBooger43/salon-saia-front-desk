@@ -121,6 +121,11 @@ textarea{min-height:80px;resize:vertical}
 .h2{font-family:var(--display);font-size:1.25rem;margin:0}
 form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column;gap:8px}
 #view-login{max-width:440px;margin:24px auto 0;width:100%;box-sizing:border-box}
+.pbox{position:relative;display:block}.pbox textarea{padding-bottom:52px;width:100%;box-sizing:border-box}
+.cam{position:absolute;left:8px;bottom:8px;width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--accent);display:grid;place-items:center;padding:0}
+.cam.inline{position:static;flex:none}
+.pprev{display:flex;align-items:center;gap:10px}.pprev:empty{display:none}.pprev img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.photo{display:block;max-width:100%;max-height:240px;border-radius:10px;border:1px solid var(--line);margin-top:4px}
 .todo-add{display:flex;gap:8px}.todo-add input{flex:1}
 .todo{display:flex;align-items:flex-start;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
 .todo input[type=checkbox]{width:22px;height:22px;margin:1px 0 0;flex:none;accent-color:var(--ok);cursor:pointer}
@@ -185,7 +190,8 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
     <section id="view-daily" style="display:flex;flex-direction:column;gap:16px">
       <form class="quick" id="dailyForm" style="display:flex">
         <label for="d-note">What happened?</label>
-        <textarea id="d-note" required maxlength="4000" placeholder="e.g. UPS dropped off 3 boxes, driver needed a signature"></textarea>
+        <div class="pbox"><textarea id="d-note" required maxlength="4000" placeholder="e.g. UPS dropped off 3 boxes, driver needed a signature"></textarea><button type="button" class="cam" data-ph="d" aria-label="Add a photo"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg></button><input type="file" id="ph-d" accept="image/*" hidden></div>
+        <div class="pprev" id="pp-d"></div>
         <div class="cats" id="d-cats">
           <button type="button" class="cat" aria-pressed="false">Delivery</button>
           <button type="button" class="cat" aria-pressed="false">Phone call</button>
@@ -227,7 +233,8 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
             <button type="button" data-v="med" aria-pressed="true">Watch</button>
             <button type="button" data-v="high" aria-pressed="false">Serious</button>
           </div></div>
-        <label class="full">What happened (facts only)<textarea id="l-note" required maxlength="4000" placeholder="What was said and done, and how it was left."></textarea></label>
+        <label class="full">What happened (facts only)<span class="pbox"><textarea id="l-note" required maxlength="4000" placeholder="What was said and done, and how it was left."></textarea><button type="button" class="cam" data-ph="l" aria-label="Add a photo"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg></button><input type="file" id="ph-l" accept="image/*" hidden></span></label>
+        <div class="full pprev" id="pp-l"></div>
         <div class="full form-actions">
           <span class="form-err" id="l-err"></span>
           <button type="button" class="ghost" id="cancelLog">Cancel</button>
@@ -283,18 +290,22 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
         <h2 class="h2">🛠 Report an issue</h2>
         <p class="meta" style="margin:0">Goes straight to the managers' to-do list.</p>
         <form id="repForm" class="todo-add plain" style="flex-direction:row">
+          <button type="button" class="cam inline" data-ph="rep" aria-label="Add a photo"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg></button><input type="file" id="ph-rep" accept="image/*" hidden>
           <input id="repText" required maxlength="500" autocomplete="off" placeholder="e.g. Out of 6N color, dryer #2 is broken">
           <button type="submit" class="primary">Send</button>
         </form>
+        <div class="pprev" id="pp-rep"></div>
         <span class="form-err" id="repErr"></span>
         <div class="feed" id="repFeed"></div>
       </div>
       <div class="quick">
         <h2 class="h2">💬 Team chat</h2>
         <form id="msgForm" class="todo-add plain" style="flex-direction:row">
+          <button type="button" class="cam inline" data-ph="msg" aria-label="Add a photo"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg></button><input type="file" id="ph-msg" accept="image/*" hidden>
           <input id="msgText" required maxlength="1000" autocomplete="off" placeholder="Message the whole team">
           <button type="submit" class="primary">Send</button>
         </form>
+        <div class="pprev" id="pp-msg"></div>
         <span class="form-err" id="msgErr"></span>
         <div class="feed" id="msgFeed"></div>
       </div>
@@ -448,6 +459,49 @@ $("va-desk").onclick = () => { previewRole = "front_desk"; applyRole(); };
 $("va-mgr").onclick = () => { previewRole = ""; applyRole(); };
 $("exitPreview").onclick = () => { previewRole = ""; applyRole(); };
 
+/* ---------- photos ---------- */
+const pendingPhoto = {}, photoUrls = {};
+async function shrinkPhoto(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(r, "image/jpeg", 0.82));
+  } finally { URL.revokeObjectURL(url); }
+}
+function showPhotoPreview(k) {
+  const b = pendingPhoto[k];
+  $("pp-" + k).innerHTML = b ? `<img src="${URL.createObjectURL(b)}" alt="Photo to attach"><button type="button" class="link del" data-phx="${k}">Remove photo</button>` : "";
+}
+["d", "l", "rep", "msg"].forEach(k => $("ph-" + k).addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try { pendingPhoto[k] = await shrinkPhoto(f); } catch { alert("Couldn't read that photo. Try a different one."); return; }
+  showPhotoPreview(k);
+}));
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-ph]"); if (b) { $("ph-" + b.dataset.ph).click(); return; }
+  const x = e.target.closest("[data-phx]"); if (x) { delete pendingPhoto[x.dataset.phx]; showPhotoPreview(x.dataset.phx); }
+});
+async function uploadPhoto(k, folder) {
+  if (!pendingPhoto[k]) return null;
+  const path = `${folder}/${crypto.randomUUID()}.jpg`;
+  const { error } = await sb.storage.from("photos").upload(path, pendingPhoto[k], { contentType: "image/jpeg" });
+  if (error) throw error;
+  return path;
+}
+const clearPhoto = k => { delete pendingPhoto[k]; showPhotoPreview(k); };
+async function signPhotos(paths) {
+  const need = [...new Set(paths.filter(p => p && !photoUrls[p]))];
+  if (!need.length) return;
+  const { data } = await sb.storage.from("photos").createSignedUrls(need, 60 * 60 * 12);
+  (data || []).forEach(x => { if (x.signedUrl) photoUrls[x.path] = x.signedUrl; });
+}
+const photoHtml = p => p && photoUrls[p] ? `<a href="${esc(photoUrls[p])}" target="_blank" rel="noopener"><img class="photo" src="${esc(photoUrls[p])}" alt="Attached photo" loading="lazy"></a>` : "";
+
 /* ---------- data ---------- */
 async function loadAll() {
   const q = [
@@ -473,6 +527,7 @@ async function loadAll() {
     realMgr() ? Promise.resolve({ data: [] }) : sb.from("todos").select("*").eq("created_by", me.email).order("created_at", {ascending: false}).limit(30),
   ]);
   anns = ra.data || []; msgs = rm.data || []; timeOff = rt.data || []; myReports = rr.data || [];
+  await signPhotos([...daily, ...incidents, ...msgs, ...myReports, ...todos].map(x => x.photo));
   renderAll();
 }
 let reloadTimer = null;
@@ -553,7 +608,7 @@ function postRow(p, kind) {
   const edit = kind === "a" && isMgr() && chatDel !== key ? `<button class="link" data-chat="edit" data-id="${p.id}">Edit</button>` : "";
   const bodyHtml = kind === "a" && annEdit === p.id
     ? `<div class="fu-box"><textarea id="annEdit-${p.id}" maxlength="2000">${esc(p.body)}</textarea><div class="actions"><button class="primary" data-chat="edit-save" data-id="${p.id}">Save</button><button class="link" data-chat="edit-cancel">Cancel</button></div></div>`
-    : `<p class="note">${esc(p.body)}</p>${(edit || del) ? `<div class="actions">${edit}${del}</div>` : ""}`;
+    : `<p class="note">${esc(p.body)}</p>${photoHtml(p.photo)}${(edit || del) ? `<div class="actions">${edit}${del}</div>` : ""}`;
   return `<div class="todo"${kind === "a" ? ' style="border-left:4px solid var(--accent)"' : ""}><div class="body"><div class="row"><b>${esc(nameOf(p.created_by))}</b><span class="meta">${whenFull(p.created_at)}${p.edited_at ? " · edited" : ""}</span></div>${bodyHtml}</div></div>`;
 }
 function renderChat() {
@@ -562,18 +617,21 @@ function renderChat() {
   $("annFeed").innerHTML = anns.length ? anns.map(a => postRow(a, "a")).join("") : `<div class="meta">No announcements yet.</div>`;
   $("msgFeed").innerHTML = msgs.length ? msgs.map(m => postRow(m, "m")).join("") : `<div class="meta">No messages yet. Say hi to the team.</div>`;
   $("reportBox").hidden = isMgr();
-  $("repFeed").innerHTML = myReports.map(t => `<div class="todo${t.done ? " done" : ""}"><div class="body"><p class="note">${esc(t.task)}</p><span class="meta">${t.done ? "✓ Done" + (t.done_at ? " · " + whenShort(t.done_at) : "") : "Sent to managers · " + whenShort(t.created_at)}</span></div></div>`).join("");
+  $("repFeed").innerHTML = myReports.map(t => `<div class="todo${t.done ? " done" : ""}"><div class="body"><p class="note">${esc(t.task)}</p>${photoHtml(t.photo)}<span class="meta">${t.done ? "✓ Done" + (t.done_at ? " · " + whenShort(t.done_at) : "") : "Sent to managers · " + whenShort(t.created_at)}</span></div></div>`).join("");
 }
-async function quickPost(inputId, errId, table, row) {
+async function quickPost(inputId, errId, table, row, phKey, folder) {
   $(errId).textContent = "";
   const v = $(inputId).value.trim(); if (!v) return;
-  const { error } = await sb.from(table).insert(row(v));
+  const data = row(v);
+  if (phKey) { try { data.photo = await uploadPhoto(phKey, folder); } catch { $(errId).textContent = "Couldn't upload the photo. Try again."; return; } }
+  const { error } = await sb.from(table).insert(data);
   if (error) { $(errId).textContent = friendly(error); return; }
+  if (phKey) clearPhoto(phKey);
   $(inputId).value = ""; loadAll();
 }
 $("annForm").addEventListener("submit", e => { e.preventDefault(); quickPost("annText", "annErr", "announcements", body => ({ body, created_by: me.email })); });
-$("msgForm").addEventListener("submit", e => { e.preventDefault(); quickPost("msgText", "msgErr", "messages", body => ({ body, created_by: me.email })); });
-$("repForm").addEventListener("submit", e => { e.preventDefault(); quickPost("repText", "repErr", "todos", task => ({ task, reported: true, created_by: me.email })); });
+$("msgForm").addEventListener("submit", e => { e.preventDefault(); quickPost("msgText", "msgErr", "messages", body => ({ body, created_by: me.email }), "msg", "chat"); });
+$("repForm").addEventListener("submit", e => { e.preventDefault(); quickPost("repText", "repErr", "todos", task => ({ task, reported: true, created_by: me.email }), "rep", "reports/" + session.user.id); });
 $("view-chat").addEventListener("click", async e => {
   const b = e.target.closest("[data-chat]"); if (!b) return;
   const a = b.dataset.chat;
@@ -601,7 +659,7 @@ const whenShort = s => new Date(s).toLocaleDateString(undefined, {month: "short"
 function todoRow(t) {
   const meta = t.done ? `Done by ${esc(nameOf(t.done_by))} · ${whenShort(t.done_at)}` : `${t.reported ? "Reported" : "Added"} by ${esc(nameOf(t.created_by))} · ${whenShort(t.created_at)}`;
   const del = todoDel === t.id ? `<span class="meta">Delete?</span><button class="link del" data-todo="del-yes" data-id="${t.id}">Yes</button><button class="link" data-todo="del-no">No</button>` : `<button class="link del" data-todo="del" data-id="${t.id}">Delete</button>`;
-  return `<div class="todo${t.done ? " done" : ""}"><input type="checkbox" data-todo="toggle" data-id="${t.id}"${t.done ? " checked" : ""} aria-label="Mark done"><div class="body"><p class="note">${esc(t.task)}</p><div class="actions"><span class="meta">${meta}</span>${del}</div></div></div>`;
+  return `<div class="todo${t.done ? " done" : ""}"><input type="checkbox" data-todo="toggle" data-id="${t.id}"${t.done ? " checked" : ""} aria-label="Mark done"><div class="body"><p class="note">${esc(t.task)}</p>${photoHtml(t.photo)}<div class="actions"><span class="meta">${meta}</span>${del}</div></div></div>`;
 }
 function renderTodo() {
   if (!isMgr()) { $("todoOpen").innerHTML = ""; $("todoDone").innerHTML = ""; $("tab-team").textContent = "Managers ⚙"; return; }
@@ -657,7 +715,7 @@ function renderDaily() {
         else if (confirmDel === "d:" + d.id) mgr = `<div class="actions"><span class="meta">Delete this note for everyone?</span><button class="link del" data-dact="del-yes" data-id="${d.id}">Yes, delete</button><button class="link" data-dact="del-no">Keep it</button></div>`;
         else mgr = `<div class="actions">${d.fu && !d.fuDone ? `<button class="link" data-dact="fu-open" data-id="${d.id}">Follow up…</button>` : d.fuDone ? `<button class="link" data-dact="fu-reopen" data-id="${d.id}">Reopen</button>` : `<button class="link" data-dact="fu-flag" data-id="${d.id}">Flag for follow-up</button>`}<button class="link del" data-dact="del" data-id="${d.id}">Delete</button></div>`;
       }
-      return `<div class="dl${d.fu && !d.fuDone ? " flag" : ""}"><time>${esc(t12(d.entry_time))}</time><div class="body"><div><span class="tag">${esc(d.category)}</span>${badge}</div><p class="note">${esc(d.note)}</p>${reply}<span class="meta">${esc(nameOf(d.created_by))}</span>${mgr}</div></div>`;
+      return `<div class="dl${d.fu && !d.fuDone ? " flag" : ""}"><time>${esc(t12(d.entry_time))}</time><div class="body"><div><span class="tag">${esc(d.category)}</span>${badge}</div><p class="note">${esc(d.note)}</p>${photoHtml(d.photo)}${reply}<span class="meta">${esc(nameOf(d.created_by))}</span>${mgr}</div></div>`;
     }).join("")}</div>`).join("");
 }
 $("d-cats").addEventListener("click", e => { const b = e.target.closest(".cat"); if (!b) return; dcat = b.textContent; $("d-cats").querySelectorAll(".cat").forEach(c => c.setAttribute("aria-pressed", c === b)); });
@@ -668,9 +726,11 @@ $("fuToggle").onclick = () => { fuOnly = !fuOnly; renderDaily(); };
 $("dailyForm").addEventListener("submit", async e => {
   e.preventDefault(); $("d-err").textContent = "";
   const note = $("d-note").value.trim(); if (!note) return;
-  const { error } = await sb.from("daily_log").insert({ entry_date: daysAgo(0), entry_time: $("d-time").value || nowTime(), category: dcat, note, needs_followup: $("d-fu").checked, created_by: me.email });
+  let photo = null;
+  try { photo = await uploadPhoto("d", "daily"); } catch { $("d-err").textContent = "Couldn't upload the photo. Try again."; return; }
+  const { error } = await sb.from("daily_log").insert({ entry_date: daysAgo(0), entry_time: $("d-time").value || nowTime(), category: dcat, note, photo, needs_followup: $("d-fu").checked, created_by: me.email });
   if (error) { $("d-err").textContent = friendly(error); return; }
-  $("d-note").value = ""; $("d-fu").checked = false; delete $("d-time").dataset.touched; $("d-time").value = nowTime();
+  clearPhoto("d"); $("d-note").value = ""; $("d-fu").checked = false; delete $("d-time").dataset.touched; $("d-time").value = nowTime();
   loadAll();
 });
 $("dailyFeed").addEventListener("click", async e => {
@@ -717,7 +777,7 @@ function renderLog() {
     return `<article class="entry${r.done ? " resolved" : ""}" style="--stripe:${stripe[l.severity] || "var(--line)"}">
       <div class="row"><span><span class="name">${esc(l.client)}</span>${n > 1 ? `<span class="repeat">${n} entries</span>` : ""}</span><span class="meta">${fmt(l.incident_date)}</span></div>
       <div class="row"><span class="tag">${esc(l.issue_type)}</span><span class="meta">${sevName[l.severity] || ""}${l.stylist ? " · with " + esc(l.stylist) : ""}</span></div>
-      <p class="note">${esc(l.note)}</p>
+      <p class="note">${esc(l.note)}</p>${photoHtml(l.photo)}
       ${r.note ? `<div class="mgr"><b>Manager note</b><div class="note">${esc(r.note)}</div></div>` : ""}
       <div class="meta">Logged by ${esc(nameOf(l.created_by))}</div>${act}</article>`;
   }).join("");
@@ -726,12 +786,13 @@ $("l-chips").addEventListener("click", e => { const b = e.target.closest(".chip"
 $("l-search").addEventListener("input", renderLog);
 $("l-sev").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; sev = b.dataset.v; $("l-sev").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); });
 $("openLog").onclick = () => { $("logForm").hidden = false; $("openLog").hidden = true; $("l-date").value = daysAgo(0); $("l-client").focus(); };
-const closeLog = () => { $("logForm").hidden = true; $("openLog").hidden = false; $("logForm").reset(); $("l-err").textContent = ""; };
+const closeLog = () => { clearPhoto("l"); $("logForm").hidden = true; $("openLog").hidden = false; $("logForm").reset(); $("l-err").textContent = ""; };
 $("cancelLog").onclick = closeLog;
 $("logForm").addEventListener("submit", async e => {
   e.preventDefault();
   const row = { client: $("l-client").value.trim(), stylist: $("l-staff").value.trim() || null, issue_type: $("l-type").value, incident_date: $("l-date").value, severity: sev, note: $("l-note").value.trim(), created_by: me.email };
   if (!row.client || !row.note) return;
+  try { row.photo = await uploadPhoto("l", "incidents"); } catch { $("l-err").textContent = "Couldn't upload the photo. Try again."; return; }
   const { error } = await sb.from("incidents").insert(row);
   if (error) { $("l-err").textContent = friendly(error); return; }
   closeLog(); loadAll();
