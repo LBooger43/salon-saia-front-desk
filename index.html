@@ -284,8 +284,8 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
     <!-- SUPPLIES (front desk + managers) -->
     <section id="view-supplies" hidden style="display:flex;flex-direction:column;gap:16px">
       <div class="quick">
-        <h2 class="h2">Shopping list</h2>
-        <p class="meta" style="margin:0">Check items off once they've been bought.</p>
+        <div class="row"><h2 class="h2">Shopping list</h2><button type="button" class="link" id="supShare" hidden>Share list</button></div>
+        <p class="meta" style="margin:0" id="supShareMsg">Check items off once they've been bought.</p>
         <div class="feed" id="supOpen"></div>
       </div>
       <div class="quick">
@@ -609,6 +609,7 @@ function renderSupplies() {
   if (!isDesk()) { $("supOpen").innerHTML = ""; $("supCatalog").innerHTML = ""; return; }
   const open = supNeeds.filter(n => !n.bought), bought = supNeeds.filter(n => n.bought).sort((a, b) => (b.bought_at || "").localeCompare(a.bought_at || ""));
   $("tab-supplies").textContent = open.length ? `Supplies (${open.length})` : "Supplies";
+  $("supShare").hidden = !open.length;
   const catOrder = [...new Set(supItems.map(i => i.category))];
   const openSorted = [...open].sort((a, b) => { const x = catOrder.indexOf(a.category), y = catOrder.indexOf(b.category); return (x < 0 ? 99 : x) - (y < 0 ? 99 : y); });
   $("supOpen").innerHTML = open.length ? supGroups(openSorted, n => n.category).map(([c, rows]) => `<div class="supgrp"><h3>${esc(c)}</h3>${rows.map(n => {
@@ -637,6 +638,19 @@ async function addNeed(row) {
   return true;
 }
 $("supEditToggle").onclick = () => { supEdit = !supEdit; renderSupplies(); };
+$("supShare").onclick = async () => {
+  const open = supNeeds.filter(n => !n.bought); if (!open.length) return;
+  const catOrder = [...new Set(supItems.map(i => i.category))];
+  open.sort((a, b) => { const x = catOrder.indexOf(a.category), y = catOrder.indexOf(b.category); return (x < 0 ? 99 : x) - (y < 0 ? 99 : y); });
+  const text = "Salon Saia shopping list\n" + supGroups(open, n => n.category).map(([c, rows]) => `${c}: ${rows.map(n => n.item_name).join(", ")}`).join("\n");
+  const note = t => { $("supShareMsg").textContent = t; setTimeout(() => $("supShareMsg").textContent = "Check items off once they've been bought.", 4000); };
+  if (navigator.share) {
+    try { await navigator.share({ text }); note("Shared. Items stay on the list until they're checked off."); } catch (e) { /* closed the share sheet */ }
+    return;
+  }
+  try { await navigator.clipboard.writeText(text); note("Copied. Paste it into a text. Items stay on the list until they're checked off."); }
+  catch { location.href = "sms:?&body=" + encodeURIComponent(text); }
+};
 $("supBoughtToggle").onclick = () => { showBought = !showBought; renderSupplies(); };
 $("supOtherForm").addEventListener("submit", async e => {
   e.preventDefault(); $("supErr").textContent = "";
