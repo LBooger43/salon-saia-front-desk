@@ -387,6 +387,7 @@ const roleName = r => r === "manager" ? "Manager" : r === "stylist" ? "Stylist" 
 let session = null, me = null, previewRole = "", current = "daily";
 let daily = [], fups = {}, incidents = [], res = {}, notes = [], team = [];
 let pwOpen = false;
+let dEdit = null;
 let dcat = "General", fuOnly = false, fuOpen = null, logFilter = "all", sev = "med", openResolve = null, confirmDel = null;
 
 const realMgr = () => me && me.role === "manager";
@@ -710,12 +711,16 @@ function renderDaily() {
       const badge = d.fu ? (d.fuDone ? `<span class="fu ok">✓ Followed up</span>` : `<span class="fu wait">⚑ Needs follow-up</span>`) : "";
       const reply = d.fuDone && d.fuNote ? `<div class="mgr"><b>Manager follow-up</b><div class="note">${esc(d.fuNote)}</div></div>` : "";
       let mgr = "";
-      if (isMgr()) {
+      const canEdit = isMgr() || (isDesk() && d.created_by === me.email);
+      const editBtn = canEdit ? `<button class="link" data-dedit="open" data-id="${d.id}">Edit</button>` : "";
+      if (dEdit === d.id) mgr = `<div class="fu-box"><textarea id="dEdit-${d.id}" maxlength="4000" aria-label="Edit note">${esc(d.note)}</textarea><div class="actions"><button class="primary" data-dedit="save" data-id="${d.id}">Save</button><button class="link" data-dedit="cancel">Cancel</button><span class="form-err" id="dEditErr"></span></div></div>`;
+      else if (isMgr()) {
         if (fuOpen === d.id) mgr = `<div class="fu-box"><textarea id="fu-${d.id}" maxlength="4000" placeholder="What you did or decided (optional)">${esc(d.fuNote)}</textarea><div class="actions"><button class="primary" data-dact="fu-save" data-id="${d.id}">Mark followed up</button><button class="link" data-dact="fu-cancel">Cancel</button></div></div>`;
         else if (confirmDel === "d:" + d.id) mgr = `<div class="actions"><span class="meta">Delete this note for everyone?</span><button class="link del" data-dact="del-yes" data-id="${d.id}">Yes, delete</button><button class="link" data-dact="del-no">Keep it</button></div>`;
-        else mgr = `<div class="actions">${d.fu && !d.fuDone ? `<button class="link" data-dact="fu-open" data-id="${d.id}">Follow up…</button>` : d.fuDone ? `<button class="link" data-dact="fu-reopen" data-id="${d.id}">Reopen</button>` : `<button class="link" data-dact="fu-flag" data-id="${d.id}">Flag for follow-up</button>`}<button class="link del" data-dact="del" data-id="${d.id}">Delete</button></div>`;
+        else mgr = `<div class="actions">${d.fu && !d.fuDone ? `<button class="link" data-dact="fu-open" data-id="${d.id}">Follow up…</button>` : d.fuDone ? `<button class="link" data-dact="fu-reopen" data-id="${d.id}">Reopen</button>` : `<button class="link" data-dact="fu-flag" data-id="${d.id}">Flag for follow-up</button>`}${editBtn}<button class="link del" data-dact="del" data-id="${d.id}">Delete</button></div>`;
       }
-      return `<div class="dl${d.fu && !d.fuDone ? " flag" : ""}"><time>${esc(t12(d.entry_time))}</time><div class="body"><div><span class="tag">${esc(d.category)}</span>${badge}</div><p class="note">${esc(d.note)}</p>${photoHtml(d.photo)}${reply}<span class="meta">${esc(nameOf(d.created_by))}</span>${mgr}</div></div>`;
+      else if (editBtn) mgr = `<div class="actions">${editBtn}</div>`;
+      return `<div class="dl${d.fu && !d.fuDone ? " flag" : ""}"><time>${esc(t12(d.entry_time))}</time><div class="body"><div><span class="tag">${esc(d.category)}</span>${badge}</div><p class="note">${esc(d.note)}</p>${photoHtml(d.photo)}${reply}<span class="meta">${esc(nameOf(d.created_by))}${d.edited_at ? " · edited" : ""}</span>${mgr}</div></div>`;
     }).join("")}</div>`).join("");
 }
 $("d-cats").addEventListener("click", e => { const b = e.target.closest(".cat"); if (!b) return; dcat = b.textContent; $("d-cats").querySelectorAll(".cat").forEach(c => c.setAttribute("aria-pressed", c === b)); });
@@ -734,6 +739,18 @@ $("dailyForm").addEventListener("submit", async e => {
   loadAll();
 });
 $("dailyFeed").addEventListener("click", async e => {
+  const eb = e.target.closest("[data-dedit]");
+  if (eb) {
+    const a = eb.dataset.dedit, id = eb.dataset.id;
+    if (a === "open") { dEdit = id; fuOpen = null; confirmDel = null; return renderDaily(); }
+    if (a === "cancel") { dEdit = null; return renderDaily(); }
+    if (a === "save") {
+      const note = $("dEdit-" + id).value.trim(); if (!note) return;
+      const { data, error } = await sb.from("daily_log").update({ note, edited_at: new Date().toISOString() }).eq("id", id).select("id");
+      if (error || !data || !data.length) { $("dEditErr").textContent = error ? friendly(error) : "You can only edit your own notes."; return; }
+      dEdit = null; return loadAll();
+    }
+  }
   const b = e.target.closest("[data-dact]"); if (!b || !isMgr()) return;
   const a = b.dataset.dact, id = b.dataset.id, d = mergedDaily().find(x => x.id === id);
   let error = null;
