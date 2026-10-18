@@ -125,6 +125,7 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
 .cam{position:absolute;left:8px;bottom:8px;width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--accent);display:grid;place-items:center;padding:0}
 .cam.inline{position:static;flex:none}
 .pprev{display:flex;align-items:center;gap:10px}.pprev:empty{display:none}.pprev img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.daterow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}.daterow label{flex:1;min-width:130px}
 .photo{display:block;max-width:100%;max-height:240px;border-radius:10px;border:1px solid var(--line);margin-top:4px}
 .todo-add{display:flex;gap:8px}.todo-add input{flex:1}
 .todo{display:flex;align-items:flex-start;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
@@ -211,6 +212,7 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
       </form>
       <div class="fu-bar" id="fuBar" hidden><span id="fuText"></span><button type="button" id="fuToggle">Show only these</button></div>
       <input id="d-search" type="search" placeholder="Search the daily log (e.g. UPS, plumber, Sherwin)">
+      <div class="daterow"><label>From<input id="d-from" type="date"></label><label>To<input id="d-to" type="date"></label><button type="button" class="link" id="d-clear" hidden>Clear dates</button></div>
       <div class="feed" id="dailyFeed"></div>
     </section>
 
@@ -243,6 +245,7 @@ form.plain{background:none;border:0;padding:0;display:flex;flex-direction:column
       </form>
       <div class="tools">
         <input id="l-search" type="search" placeholder="Search client name or note">
+        <div class="daterow"><label>From<input id="l-from" type="date"></label><label>To<input id="l-to" type="date"></label><button type="button" class="link" id="l-clear" hidden>Clear dates</button></div>
         <div class="chips" id="l-chips">
           <button class="chip" data-f="all" aria-pressed="true">All</button>
           <button class="chip" data-f="open" aria-pressed="false">Open</button>
@@ -503,6 +506,32 @@ async function signPhotos(paths) {
 }
 const photoHtml = p => p && photoUrls[p] ? `<a href="${esc(photoUrls[p])}" target="_blank" rel="noopener"><img class="photo" src="${esc(photoUrls[p])}" alt="Attached photo" loading="lazy"></a>` : "";
 
+/* ---------- date filters ---------- */
+const rangeData = { d: null, l: null };
+const rangeOf = k => ({ from: $(k + "-from").value, to: $(k + "-to").value });
+const rangeOn = k => { const r = rangeOf(k); return !!(r.from || r.to); };
+const inRange = (k, day) => { const r = rangeOf(k); return (!r.from || day >= r.from) && (!r.to || day <= r.to); };
+async function fetchRange(k) {
+  if (!rangeOn(k)) { rangeData[k] = null; return; }
+  const r = rangeOf(k), col = k === "d" ? "entry_date" : "incident_date";
+  let q = sb.from(k === "d" ? "daily_log" : "incidents").select("*").order(col, { ascending: false }).limit(2000);
+  if (r.from) q = q.gte(col, r.from);
+  if (r.to) q = q.lte(col, r.to);
+  const { data } = await q;
+  rangeData[k] = data || [];
+}
+async function onRangeChange(k) {
+  $(k + "-clear").hidden = !rangeOn(k);
+  await fetchRange(k);
+  await signPhotos((rangeData[k] || []).map(x => x.photo));
+  k === "d" ? renderDaily() : renderLog();
+}
+["d", "l"].forEach(k => {
+  $(k + "-from").addEventListener("change", () => onRangeChange(k));
+  $(k + "-to").addEventListener("change", () => onRangeChange(k));
+  $(k + "-clear").onclick = () => { $(k + "-from").value = ""; $(k + "-to").value = ""; onRangeChange(k); };
+});
+
 /* ---------- data ---------- */
 async function loadAll() {
   const q = [
@@ -528,7 +557,8 @@ async function loadAll() {
     realMgr() ? Promise.resolve({ data: [] }) : sb.from("todos").select("*").eq("created_by", me.email).order("created_at", {ascending: false}).limit(30),
   ]);
   anns = ra.data || []; msgs = rm.data || []; timeOff = rt.data || []; myReports = rr.data || [];
-  await signPhotos([...daily, ...incidents, ...msgs, ...myReports, ...todos].map(x => x.photo));
+  await Promise.all([fetchRange("d"), fetchRange("l")]);
+  await signPhotos([...daily, ...incidents, ...msgs, ...myReports, ...todos, ...(rangeData.d || []), ...(rangeData.l || [])].map(x => x.photo));
   renderAll();
 }
 let reloadTimer = null;
@@ -695,7 +725,7 @@ $("view-team").addEventListener("click", async e => {
 });
 
 /* ---------- daily log ---------- */
-function mergedDaily() { return daily.map(d => { const f = fups[d.id] || {}; return {...d, fu: !!(d.needs_followup || f.flagged), fuDone: !!f.done, fuNote: f.note || ""}; }); }
+function mergedDaily() { return (rangeData.d || daily).filter(d => inRange("d", d.entry_date)).map(d => { const f = fups[d.id] || {}; return {...d, fu: !!(d.needs_followup || f.flagged), fuDone: !!f.done, fuNote: f.note || ""}; }); }
 function renderDaily() {
   const all = mergedDaily(), q = $("d-search").value.trim().toLowerCase();
   const waiting = all.filter(d => d.fu && !d.fuDone);
@@ -703,8 +733,8 @@ function renderDaily() {
   $("fuText").textContent = waiting.length ? `⚑ ${waiting.length} ${waiting.length === 1 ? "note needs" : "notes need"} manager follow-up` : "No open follow-ups";
   $("fuToggle").textContent = fuOnly ? "Show everything" : "Show only these";
   const list = all.filter(d => (!q || (d.note + " " + d.category + " " + nameOf(d.created_by)).toLowerCase().includes(q)) && (!fuOnly || (d.fu && !d.fuDone)));
-  if (!all.length) { $("dailyFeed").innerHTML = `<div class="empty"><b>Nothing logged yet</b>Type what happened above and tap “Add to log.” The time fills in for you.</div>`; return; }
-  if (!list.length) { $("dailyFeed").innerHTML = `<div class="empty">Nothing matches that search.</div>`; return; }
+  if (!all.length && !rangeOn("d")) { $("dailyFeed").innerHTML = `<div class="empty"><b>Nothing logged yet</b>Type what happened above and tap “Add to log.” The time fills in for you.</div>`; return; }
+  if (!list.length) { $("dailyFeed").innerHTML = `<div class="empty">${rangeOn("d") && !q ? "Nothing logged between those dates." : "Nothing matches that search."}</div>`; return; }
   const days = {}; list.forEach(d => (days[d.entry_date] = days[d.entry_date] || []).push(d));
   $("dailyFeed").innerHTML = Object.entries(days).map(([day, items]) => `<div class="day"><h2>${esc(dayLabel(day))}<span>${items.length} ${items.length === 1 ? "note" : "notes"}</span></h2>
     ${items.map(d => {
@@ -774,15 +804,16 @@ function renderLog() {
   $("st-open").textContent = incidents.filter(l => !done(l)).length;
   $("st-week").textContent = incidents.filter(l => l.incident_date >= wk).length;
   $("st-repeat").textContent = Object.values(count).filter(n => n > 1).length;
-  const list = incidents.filter(l => {
+  const list = (rangeData.l || incidents).filter(l => {
+    if (!inRange("l", l.incident_date)) return false;
     if (logFilter === "open" && done(l)) return false;
     if (logFilter === "resolved" && !done(l)) return false;
     if (logFilter === "high" && l.severity !== "high") return false;
     if (q && !(l.client + " " + l.note + " " + l.issue_type + " " + (l.stylist || "")).toLowerCase().includes(q)) return false;
     return true;
   });
-  if (!incidents.length) { $("logFeed").innerHTML = `<div class="empty"><b>No incidents logged yet</b>Tap “Log a client incident” to add the first one. Everyone on the team will see it.</div>`; return; }
-  if (!list.length) { $("logFeed").innerHTML = `<div class="empty">No entries match. Try a different filter or search.</div>`; return; }
+  if (!incidents.length && !rangeOn("l")) { $("logFeed").innerHTML = `<div class="empty"><b>No incidents logged yet</b>Tap “Log a client incident” to add the first one. Everyone on the team will see it.</div>`; return; }
+  if (!list.length) { $("logFeed").innerHTML = `<div class="empty">${rangeOn("l") ? "No entries match in those dates. Try a different filter, search or date range." : "No entries match. Try a different filter or search."}</div>`; return; }
   $("logFeed").innerHTML = list.map(l => {
     const r = res[l.id] || {}, n = count[l.client.toLowerCase()];
     let act = "";
