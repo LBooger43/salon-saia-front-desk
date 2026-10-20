@@ -694,7 +694,7 @@ function wuDetail(w) {
     ${sigBlock(w, "employee", "Employee signature", w.staff_member)}
     ${w.witnesses ? sigBlock(w, "witness", "Witness signature", w.witnesses) : ""}
     ${sigBlock(w, "manager", "Manager sign-off", w.manager_name || me.name)}
-    <div class="actions"><button class="link" data-wu="print" data-id="${w.id}">Print / save PDF</button>${wuDel === w.id ? `<span class="meta">Delete this write-up?</span><button class="link del" data-wu="del-yes" data-id="${w.id}">Yes, delete</button><button class="link" data-wu="del-no">Keep it</button>` : `<button class="link del" data-wu="del" data-id="${w.id}">Delete</button>`}<button class="link" data-wu="close">Close</button></div>`;
+    <div class="actions"><button class="link" data-wu="pdf" data-id="${w.id}">Email / share PDF</button><button class="link" data-wu="print" data-id="${w.id}">Print</button>${wuDel === w.id ? `<span class="meta">Delete this write-up?</span><button class="link del" data-wu="del-yes" data-id="${w.id}">Yes, delete</button><button class="link" data-wu="del-no">Keep it</button>` : `<button class="link del" data-wu="del" data-id="${w.id}">Delete</button>`}<button class="link" data-wu="close">Close</button></div>`;
 }
 function renderWriteups() {
   if (!isMgr()) { $("wuFeed").innerHTML = ""; return; }
@@ -710,6 +710,49 @@ function renderWriteups() {
     </article>`;
   }).join("");
   if (wuSign && $("wuPad")) wuPad = makePad($("wuPad"));
+}
+function loadJsPdf() {
+  if (window.jspdf) return Promise.resolve();
+  return new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+}
+const toDataUrl = async url => { const blob = await (await fetch(url)).blob(); return await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); }); };
+async function wuPdf(w) {
+  await loadJsPdf();
+  const doc = new window.jspdf.jsPDF({ unit: "pt", format: "letter" });
+  const L = 54, W = 504, BOTTOM = 740; let y = 60;
+  const room = h => { if (y + h > BOTTOM) { doc.addPage(); y = 60; } };
+  const text = (t, size = 11, bold = false) => { doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); const lines = doc.splitTextToSize(String(t), W); lines.forEach(line => { room(size + 4); doc.text(line, L, y); y += size + 4; }); };
+  const head = t => { y += 8; room(30); doc.setDrawColor(180); doc.line(L, y - 10, L + W, y - 10); text(t.toUpperCase(), 9, true); y += 2; };
+  const field = (k, v) => { room(16); doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(k + ":", L, y); doc.setFont("helvetica", "normal"); doc.text(String(v), L + 120, y); y += 16; };
+  text("Salon Saia · Employee write-up", 18, true); y += 6;
+  field("Employee", w.staff_member); field("Date of incident", fmt(w.incident_date)); field("Type", w.category); field("Level", w.level);
+  if (w.review_date) field("Follow-up review", fmt(w.review_date));
+  head("What happened"); text(w.description);
+  if (w.notes) { head("Notes"); text(w.notes); }
+  head("Plan of action"); text(w.action_plan);
+  if ((w.actions || []).length) { head("Action items"); w.actions.forEach(a => text(`${a.done ? "[x]" : "[  ]"} ${a.task}${a.due ? "  (due " + fmt(a.due) + ")" : ""}`)); }
+  if (w.witnesses) { head("Witnesses"); text(w.witnesses); }
+  head("Signatures");
+  const sig = async (slot, label, who) => {
+    room(100);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(label, L, y); y += 8;
+    if (slot === "employee" && w.employee_refused) { y += 10; text(`${who} declined to sign · ${whenFull(w.employee_signed_at)}`); y += 8; return; }
+    const p = w[slot + "_sig"];
+    if (p && photoUrls[p]) { try { doc.addImage(await toDataUrl(photoUrls[p]), "PNG", L, y, 180, 60); } catch (e) {} }
+    else { doc.setDrawColor(120); doc.line(L, y + 55, L + 220, y + 55); }
+    y += 68; text(`${who}${w[slot + "_signed_at"] ? " · " + whenFull(w[slot + "_signed_at"]) : " · Date: ____________"}`, 10); y += 8;
+  };
+  await sig("employee", "Employee", w.staff_member);
+  if (w.witnesses) await sig("witness", "Witness", w.witnesses);
+  await sig("manager", "Manager", w.manager_name || "");
+  const name = `Write-up - ${w.staff_member} - ${w.incident_date}.pdf`.replace(/[\\/:*?"<>|]/g, "");
+  const file = new File([doc.output("blob")], name, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); } catch (e) { /* share sheet closed */ }
+    return;
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => alert("PDF saved to your downloads. Attach it to an email to send it."), 300);
 }
 function wuPrint(w) {
   const sig = (slot, label, who) => {
@@ -740,6 +783,7 @@ $("wuFeed").addEventListener("click", async e => {
   if (a === "sig-cancel") { wuSign = null; return renderWriteups(); }
   if (a === "sig-clear") { wuPad && wuPad.clear(); return; }
   if (a === "print" && w) return wuPrint(w);
+  if (a === "pdf" && w) { b.disabled = true; b.textContent = "Making PDF…"; try { await wuPdf(w); } catch (err) { alert("Couldn't make the PDF. Try Print instead."); } b.disabled = false; b.textContent = "Email / share PDF"; return; }
   if (a === "del") { wuDel = id; return renderWriteups(); }
   if (a === "del-no") { wuDel = null; return renderWriteups(); }
   let error = null;
