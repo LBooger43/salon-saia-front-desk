@@ -134,10 +134,18 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
 .todo input[type=checkbox]{width:22px;height:22px;margin:1px 0 0;flex:none;accent-color:var(--ok);cursor:pointer}
 .todo .body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .todo.done .note{text-decoration:line-through;color:var(--muted)}
+.sigpad{display:block;width:100%;height:170px;background:#fff;border:1px dashed var(--line);border-radius:10px;touch-action:none}
+.sig{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.sig img{max-width:260px;max-height:110px;background:#fff;border-radius:6px}
+.wu-item{display:flex;gap:8px;align-items:center}.wu-item input[type=text]{flex:1;min-width:0}.wu-item input[type=date]{width:auto;flex:none}
+.wu-sec{display:flex;flex-direction:column;gap:2px}.wu-sec b{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+#printArea{display:none}
+@media print{body{background:#fff}.wrap{display:none!important}#printArea{display:block!important;color:#000;font-family:Figtree,sans-serif;padding:24px}#printArea img{max-width:240px;max-height:100px}#printArea h1{font-size:22px;margin:0 0 4px}#printArea h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 4px}#printArea p{margin:0;white-space:pre-wrap}#printArea table{border-collapse:collapse;width:100%}#printArea td{border:1px solid #999;padding:4px 6px;font-size:12px;vertical-align:top}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
 </head>
 <body>
+<div id="printArea"></div>
 <div class="wrap">
   <header>
     <div>
@@ -382,6 +390,36 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
         <button type="button" class="link" id="todoDoneToggle" hidden></button>
         <div class="feed" id="todoDone" hidden></div>
       </div>
+      <div class="quick">
+        <h2 class="h2">Manager log 🔒</h2>
+        <p class="meta" style="margin:0">Only managers can see this. Front desk and stylists can't.</p>
+        <form id="mlForm" class="plain">
+          <label for="ml-note">What happened?</label>
+          <div class="pbox"><textarea id="ml-note" required maxlength="4000" placeholder="e.g. Talked to landlord about parking lot lights. Fixing next week."></textarea><button type="button" class="cam" data-ph="ml" aria-label="Add a photo"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg></button><input type="file" id="ph-ml" accept="image/*" hidden></div>
+          <div class="pprev" id="pp-ml"></div>
+          <div class="form-actions"><span class="form-err" id="ml-err"></span><button type="submit" class="primary">Add to manager log</button></div>
+        </form>
+        <input id="ml-search" type="search" placeholder="Search the manager log">
+        <div class="feed" id="mlFeed"></div>
+      </div>
+      <div class="quick">
+        <div class="row"><h2 class="h2">Staff write-ups 🔒</h2><button type="button" class="link" id="wuNew">+ New write-up</button></div>
+        <p class="meta" style="margin:0">Only managers can see these.</p>
+        <form id="wuForm" hidden>
+          <label>Employee<input id="wu-staff" list="staffList" required maxlength="100" autocomplete="off" placeholder="Name"></label>
+          <label>Date of incident<input id="wu-date" type="date" required></label>
+          <label>Type<select id="wu-type"><option>Attendance</option><option>Conduct</option><option>Performance</option><option>Policy violation</option><option>Client complaint</option><option>Other</option></select></label>
+          <label>Level<select id="wu-level"><option>Documented verbal warning</option><option>Written warning</option><option>Final written warning</option></select></label>
+          <label class="full">What happened<textarea id="wu-what" required maxlength="4000" placeholder="Facts only: what, when, where, who was involved."></textarea></label>
+          <label class="full">Notes<textarea id="wu-notes" maxlength="4000" placeholder="Prior conversations, the employee's side, anything else."></textarea></label>
+          <label class="full">Plan of action<textarea id="wu-plan" required maxlength="4000" placeholder="What needs to change, and what happens if it doesn't."></textarea></label>
+          <div class="full lbl">Action items and due dates<div id="wu-items" style="display:flex;flex-direction:column;gap:8px"></div><button type="button" class="link" id="wu-additem" style="align-self:flex-start">+ Add action item</button></div>
+          <label>Follow-up review date<input id="wu-review" type="date"></label>
+          <label>Witnesses<input id="wu-witness" maxlength="300" placeholder="Names, if any"></label>
+          <div class="full form-actions"><span class="form-err" id="wu-err"></span><button type="button" class="ghost" id="wu-cancel">Cancel</button><button type="submit" class="primary">Save, then sign</button></div>
+        </form>
+        <div class="feed" id="wuFeed"></div>
+      </div>
       <h2 class="h2">Team</h2>
       <div class="banner">Add someone here, then text them the link. The first time, they tap “Create your password” and use this same email. Managers get everything; front desk gets Daily log, Incidents and Team chat; stylists get Team chat only.</div>
       <form id="teamForm">
@@ -510,7 +548,7 @@ function showPhotoPreview(k) {
   const b = pendingPhoto[k];
   $("pp-" + k).innerHTML = b ? `<img src="${URL.createObjectURL(b)}" alt="Photo to attach"><button type="button" class="link del" data-phx="${k}">Remove photo</button>` : "";
 }
-["d", "l", "rep", "msg"].forEach(k => $("ph-" + k).addEventListener("change", async e => {
+["d", "l", "rep", "msg", "ml"].forEach(k => $("ph-" + k).addEventListener("change", async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   try { pendingPhoto[k] = await shrinkPhoto(f); } catch { alert("Couldn't read that photo. Try a different one."); return; }
   showPhotoPreview(k);
@@ -572,6 +610,8 @@ async function loadAll() {
   ];
   if (realMgr()) q.push(sb.from("staff_notes").select("*").order("note_date", {ascending: false}).order("created_at", {ascending: false}).limit(1000));
   if (realMgr()) q.push(sb.from("todos").select("*").order("created_at", {ascending: false}).limit(500));
+  if (realMgr()) q.push(sb.from("manager_log").select("*").order("created_at", {ascending: false}).limit(1000));
+  if (realMgr()) q.push(sb.from("staff_writeups").select("*").order("incident_date", {ascending: false}).order("created_at", {ascending: false}).limit(500));
   const r = await Promise.all(q);
   team = r[0].data || []; daily = r[1].data || [];
   fups = {}; (r[2].data || []).forEach(f => fups[f.log_id] = f);
@@ -579,6 +619,8 @@ async function loadAll() {
   res = {}; (r[4].data || []).forEach(x => res[x.incident_id] = x);
   notes = realMgr() ? (r[5].data || []) : [];
   todos = realMgr() ? (r[6].data || []) : [];
+  mlog = realMgr() ? (r[7].data || []) : [];
+  writeups = realMgr() ? (r[8].data || []) : [];
   const since14 = new Date(Date.now() - 14 * 864e5).toISOString();
   const [ra, rm, rt, rr, rsi, rsn] = await Promise.all([
     sb.from("announcements").select("*").order("created_at", {ascending: false}).limit(50),
@@ -590,13 +632,175 @@ async function loadAll() {
   ]);
   anns = ra.data || []; msgs = rm.data || []; timeOff = rt.data || []; myReports = rr.data || []; supItems = rsi.data || []; supNeeds = rsn.data || [];
   await Promise.all([fetchRange("d"), fetchRange("l")]);
-  await signPhotos([...daily, ...incidents, ...msgs, ...myReports, ...todos, ...(rangeData.d || []), ...(rangeData.l || [])].map(x => x.photo));
+  await signPhotos([...daily, ...incidents, ...msgs, ...myReports, ...todos, ...mlog, ...(rangeData.d || []), ...(rangeData.l || [])].map(x => x.photo).concat(writeups.flatMap(w => [w.employee_sig, w.witness_sig, w.manager_sig])));
   renderAll();
 }
 let reloadTimer = null;
 const scheduleReload = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(loadAll, 400); };
 
-function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); renderTodo(); renderChat(); renderTime(); renderSupplies(); }
+function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); renderTodo(); renderChat(); renderTime(); renderSupplies(); renderMlog(); renderWriteups(); }
+
+/* ---------- staff write-ups ---------- */
+let writeups = [], wuOpen = null, wuSign = null, wuDel = null, wuPad = null;
+const wuStatus = w => (w.manager_sig && (w.employee_sig || w.employee_refused) && (!w.witnesses || w.witness_sig)) ? `<span class="fu ok">✓ Signed</span>` : `<span class="fu wait">Needs signatures</span>`;
+function wuItemRow(task = "", due = "") {
+  const d = document.createElement("div"); d.className = "wu-item";
+  d.innerHTML = `<input type="text" maxlength="300" placeholder="e.g. Arrive by 8:45 every shift" aria-label="Action item"><input type="date" aria-label="Due date"><button type="button" class="link del" aria-label="Remove action item">×</button>`;
+  d.children[0].value = task; d.children[1].value = due;
+  d.children[2].onclick = () => d.remove();
+  $("wu-items").appendChild(d);
+}
+$("wuNew").onclick = () => { $("wuForm").hidden = false; $("wuNew").hidden = true; $("wu-date").value = daysAgo(0); $("wu-items").innerHTML = ""; wuItemRow(); $("wu-staff").focus(); };
+$("wu-additem").onclick = () => wuItemRow();
+const wuClose = () => { $("wuForm").hidden = true; $("wuNew").hidden = false; $("wuForm").reset(); $("wu-items").innerHTML = ""; $("wu-err").textContent = ""; };
+$("wu-cancel").onclick = wuClose;
+$("wuForm").addEventListener("submit", async e => {
+  e.preventDefault(); $("wu-err").textContent = "";
+  const actions = [...$("wu-items").children].map(r => ({ task: r.children[0].value.trim(), due: r.children[1].value || null, done: false })).filter(a => a.task);
+  const row = { staff_member: $("wu-staff").value.trim(), incident_date: $("wu-date").value, category: $("wu-type").value, level: $("wu-level").value,
+    description: $("wu-what").value.trim(), notes: $("wu-notes").value.trim() || null, action_plan: $("wu-plan").value.trim(), actions,
+    review_date: $("wu-review").value || null, witnesses: $("wu-witness").value.trim() || null, created_by: me.email };
+  if (!row.staff_member || !row.description || !row.action_plan) return;
+  const { data, error } = await sb.from("staff_writeups").insert(row).select("id").single();
+  if (error) { $("wu-err").textContent = friendly(error); return; }
+  wuClose(); wuOpen = data.id; await loadAll();
+});
+function makePad(canvas) {
+  const ctx = canvas.getContext("2d"), dpr = window.devicePixelRatio || 1;
+  const size = () => { const r = canvas.getBoundingClientRect(); canvas.width = r.width * dpr; canvas.height = r.height * dpr; ctx.scale(dpr, dpr); ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#111"; };
+  size();
+  let drawing = false, empty = true;
+  const pt = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  canvas.addEventListener("pointerdown", e => { drawing = true; empty = false; canvas.setPointerCapture(e.pointerId); const [x, y] = pt(e); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 0.1, y + 0.1); ctx.stroke(); });
+  canvas.addEventListener("pointermove", e => { if (!drawing) return; const [x, y] = pt(e); ctx.lineTo(x, y); ctx.stroke(); });
+  const end = () => { drawing = false; };
+  canvas.addEventListener("pointerup", end); canvas.addEventListener("pointercancel", end);
+  return { clear: () => { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.restore(); empty = true; }, isEmpty: () => empty, toBlob: () => new Promise(r => canvas.toBlob(r, "image/png")) };
+}
+function sigBlock(w, slot, label, who) {
+  const path = w[slot + "_sig"], at = w[slot + "_signed_at"];
+  if (slot === "employee" && w.employee_refused) return `<div class="sig"><b>${label}</b><span>${esc(who)} declined to sign · ${whenFull(at)}</span></div>`;
+  if (path) return `<div class="sig"><b>${label}</b>${photoUrls[path] ? `<img src="${esc(photoUrls[path])}" alt="${label} signature">` : ""}<span class="meta">${esc(who)} · ${whenFull(at)}</span></div>`;
+  if (wuSign && wuSign.id === w.id && wuSign.slot === slot) return `<div class="sig"><b>${label}: ${esc(who)}</b><span class="meta">Sign with your finger in the box.</span><canvas class="sigpad" id="wuPad" data-k="${w.id}${slot}"></canvas><div class="actions"><button class="primary" data-wu="sig-save" data-id="${w.id}">Save signature</button><button class="link" data-wu="sig-clear">Clear</button><button class="link" data-wu="sig-cancel">Cancel</button><span class="form-err" id="wuSigErr"></span></div></div>`;
+  return `<div class="sig"><b>${label}</b><span class="meta">${esc(who)} · not signed yet</span><div class="actions"><button class="link" data-wu="sign" data-slot="${slot}" data-id="${w.id}">Sign now</button>${slot === "employee" ? `<button class="link del" data-wu="refused" data-id="${w.id}">Employee declined to sign</button>` : ""}</div></div>`;
+}
+function wuDetail(w) {
+  const items = (w.actions || []);
+  const sec = (t, v) => v ? `<div class="wu-sec"><b>${t}</b><p class="note">${esc(v)}</p></div>` : "";
+  return `${sec("What happened", w.description)}${sec("Notes", w.notes)}${sec("Plan of action", w.action_plan)}
+    ${items.length ? `<div class="wu-sec"><b>Action items</b>${items.map((a, i) => `<label class="fu-check"><input type="checkbox" data-wu="item" data-id="${w.id}" data-i="${i}"${a.done ? " checked" : ""}> <span${a.done ? ' style="text-decoration:line-through;color:var(--muted)"' : ""}>${esc(a.task)}${a.due ? ` · due ${fmt(a.due)}` : ""}</span></label>`).join("")}</div>` : ""}
+    ${w.review_date ? `<div class="wu-sec"><b>Follow-up review</b><span>${fmt(w.review_date)}</span></div>` : ""}
+    ${sec("Witnesses", w.witnesses)}
+    ${sigBlock(w, "employee", "Employee signature", w.staff_member)}
+    ${w.witnesses ? sigBlock(w, "witness", "Witness signature", w.witnesses) : ""}
+    ${sigBlock(w, "manager", "Manager sign-off", w.manager_name || me.name)}
+    <div class="actions"><button class="link" data-wu="print" data-id="${w.id}">Print / save PDF</button>${wuDel === w.id ? `<span class="meta">Delete this write-up?</span><button class="link del" data-wu="del-yes" data-id="${w.id}">Yes, delete</button><button class="link" data-wu="del-no">Keep it</button>` : `<button class="link del" data-wu="del" data-id="${w.id}">Delete</button>`}<button class="link" data-wu="close">Close</button></div>`;
+}
+function renderWriteups() {
+  if (!isMgr()) { $("wuFeed").innerHTML = ""; return; }
+  if (wuSign && $("wuPad") && $("wuPad").dataset.k === wuSign.id + wuSign.slot) return; // keep a signature in progress
+  if (!writeups.length) { $("wuFeed").innerHTML = `<div class="meta">No write-ups yet.</div>`; return; }
+  $("wuFeed").innerHTML = writeups.map(w => {
+    const open = (w.actions || []).filter(a => !a.done).length;
+    return `<article class="entry" style="--stripe:${w.level.startsWith("Final") ? "var(--crit)" : w.level.startsWith("Written") ? "var(--warn)" : "var(--private)"}">
+      <div class="row"><span class="name">${esc(w.staff_member)}</span>${wuStatus(w)}</div>
+      <div class="row"><span><span class="tag">${esc(w.category)}</span> <span class="meta">${esc(w.level)}</span></span><span class="meta">${fmt(w.incident_date)}</span></div>
+      ${open ? `<div class="meta">${open} open action ${open === 1 ? "item" : "items"}</div>` : ""}
+      ${wuOpen === w.id ? wuDetail(w) : `<div class="actions"><button class="link" data-wu="open" data-id="${w.id}">Open</button></div>`}
+    </article>`;
+  }).join("");
+  if (wuSign && $("wuPad")) wuPad = makePad($("wuPad"));
+}
+function wuPrint(w) {
+  const sig = (slot, label, who) => {
+    if (slot === "employee" && w.employee_refused) return `<tr><td>${label}</td><td>${esc(who)} declined to sign · ${whenFull(w.employee_signed_at)}</td></tr>`;
+    const p = w[slot + "_sig"];
+    return `<tr><td>${label}</td><td>${p && photoUrls[p] ? `<img src="${esc(photoUrls[p])}" alt="">` : "&nbsp;<br>&nbsp;"}<br>${esc(who)}${w[slot + "_signed_at"] ? " · " + whenFull(w[slot + "_signed_at"]) : " · Date: ________"}</td></tr>`;
+  };
+  const items = (w.actions || []).map(a => `<tr><td>${a.done ? "☑" : "☐"} ${esc(a.task)}</td><td>${a.due ? fmt(a.due) : ""}</td></tr>`).join("");
+  $("printArea").innerHTML = `<h1>Salon Saia · Employee write-up</h1>
+    <table><tr><td>Employee</td><td>${esc(w.staff_member)}</td></tr><tr><td>Date of incident</td><td>${fmt(w.incident_date)}</td></tr><tr><td>Type</td><td>${esc(w.category)}</td></tr><tr><td>Level</td><td>${esc(w.level)}</td></tr>${w.review_date ? `<tr><td>Follow-up review</td><td>${fmt(w.review_date)}</td></tr>` : ""}</table>
+    <h3>What happened</h3><p>${esc(w.description)}</p>${w.notes ? `<h3>Notes</h3><p>${esc(w.notes)}</p>` : ""}<h3>Plan of action</h3><p>${esc(w.action_plan)}</p>
+    ${items ? `<h3>Action items</h3><table><tr><td><b>Item</b></td><td><b>Due</b></td></tr>${items}</table>` : ""}
+    ${w.witnesses ? `<h3>Witnesses</h3><p>${esc(w.witnesses)}</p>` : ""}
+    <h3>Signatures</h3><table>${sig("employee", "Employee", w.staff_member)}${w.witnesses ? sig("witness", "Witness", w.witnesses) : ""}${sig("manager", "Manager", w.manager_name || "")}</table>`;
+  setTimeout(() => window.print(), 300);
+}
+$("wuFeed").addEventListener("click", async e => {
+  const b = e.target.closest("[data-wu]"); if (!b || !isMgr()) return;
+  const a = b.dataset.wu, id = b.dataset.id, w = writeups.find(x => x.id === id);
+  if (a === "item" && w) {
+    const actions = (w.actions || []).map((x, i) => i === +b.dataset.i ? { ...x, done: b.checked } : x);
+    const { error } = await sb.from("staff_writeups").update({ actions }).eq("id", id);
+    if (error) alert(friendly(error)); return loadAll();
+  }
+  if (a === "open") { wuOpen = id; wuSign = null; wuDel = null; return renderWriteups(); }
+  if (a === "close") { wuOpen = null; wuSign = null; return renderWriteups(); }
+  if (a === "sign") { wuSign = { id, slot: b.dataset.slot }; return renderWriteups(); }
+  if (a === "sig-cancel") { wuSign = null; return renderWriteups(); }
+  if (a === "sig-clear") { wuPad && wuPad.clear(); return; }
+  if (a === "print" && w) return wuPrint(w);
+  if (a === "del") { wuDel = id; return renderWriteups(); }
+  if (a === "del-no") { wuDel = null; return renderWriteups(); }
+  let error = null;
+  if (a === "del-yes") { wuDel = null; wuOpen = null; ({ error } = await sb.from("staff_writeups").delete().eq("id", id)); }
+  if (a === "refused") ({ error } = await sb.from("staff_writeups").update({ employee_refused: true, employee_signed_at: new Date().toISOString() }).eq("id", id));
+  if (a === "sig-save") {
+    if (!wuPad || wuPad.isEmpty()) { $("wuSigErr").textContent = "Please sign in the box first."; return; }
+    const slot = wuSign.slot, blob = await wuPad.toBlob();
+    const path = `writeups/${id}/${slot}-${crypto.randomUUID()}.png`;
+    const up = await sb.storage.from("photos").upload(path, blob, { contentType: "image/png" });
+    if (up.error) { $("wuSigErr").textContent = "Couldn't save the signature. Try again."; return; }
+    const row = { [slot + "_sig"]: path, [slot + "_signed_at"]: new Date().toISOString() };
+    if (slot === "manager") row.manager_name = me.name;
+    ({ error } = await sb.from("staff_writeups").update(row).eq("id", id));
+    wuSign = null;
+  }
+  if (error) alert(friendly(error));
+  loadAll();
+});
+
+
+/* ---------- manager log ---------- */
+let mlog = [], mlEdit = null, mlDel = null;
+const timeOf = s => new Date(s).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }).replace(" ", "").toLowerCase();
+function renderMlog() {
+  if (!isMgr()) { $("mlFeed").innerHTML = ""; return; }
+  const q = $("ml-search").value.trim().toLowerCase();
+  const list = mlog.filter(m => !q || (m.note + " " + nameOf(m.created_by)).toLowerCase().includes(q));
+  if (!mlog.length) { $("mlFeed").innerHTML = `<div class="meta">Nothing in the manager log yet.</div>`; return; }
+  if (!list.length) { $("mlFeed").innerHTML = `<div class="meta">Nothing matches that search.</div>`; return; }
+  const days = {}; list.forEach(m => (days[m.entry_date] = days[m.entry_date] || []).push(m));
+  $("mlFeed").innerHTML = Object.entries(days).map(([day, items]) => `<div class="day"><h2>${esc(dayLabel(day))}<span>${items.length} ${items.length === 1 ? "note" : "notes"}</span></h2>${items.map(m => {
+    let act;
+    if (mlEdit === m.id) act = `<div class="fu-box"><textarea id="mlEdit-${m.id}" maxlength="4000" aria-label="Edit note">${esc(m.note)}</textarea><div class="actions"><button class="primary" data-ml="save" data-id="${m.id}">Save</button><button class="link" data-ml="cancel">Cancel</button></div></div>`;
+    else if (mlDel === m.id) act = `<div class="actions"><span class="meta">Delete this note?</span><button class="link del" data-ml="del-yes" data-id="${m.id}">Yes, delete</button><button class="link" data-ml="del-no">Keep it</button></div>`;
+    else act = `<div class="actions"><button class="link" data-ml="edit" data-id="${m.id}">Edit</button><button class="link del" data-ml="del" data-id="${m.id}">Delete</button></div>`;
+    return `<div class="dl"><time>${esc(timeOf(m.created_at))}</time><div class="body">${mlEdit === m.id ? "" : `<p class="note">${esc(m.note)}</p>`}${photoHtml(m.photo)}<span class="meta">${esc(nameOf(m.created_by))}${m.edited_at ? " · edited" : ""}</span>${act}</div></div>`;
+  }).join("")}</div>`).join("");
+}
+$("ml-search").addEventListener("input", renderMlog);
+$("mlForm").addEventListener("submit", async e => {
+  e.preventDefault(); $("ml-err").textContent = "";
+  const note = $("ml-note").value.trim(); if (!note) return;
+  let photo = null;
+  try { photo = await uploadPhoto("ml", "mgrlog"); } catch { $("ml-err").textContent = "Couldn't upload the photo. Try again."; return; }
+  const { error } = await sb.from("manager_log").insert({ entry_date: daysAgo(0), note, photo, created_by: me.email });
+  if (error) { $("ml-err").textContent = friendly(error); return; }
+  clearPhoto("ml"); $("ml-note").value = ""; loadAll();
+});
+$("mlFeed").addEventListener("click", async e => {
+  const b = e.target.closest("[data-ml]"); if (!b || !isMgr()) return;
+  const a = b.dataset.ml, id = b.dataset.id; let error = null;
+  if (a === "edit") { mlEdit = id; mlDel = null; return renderMlog(); }
+  if (a === "cancel") { mlEdit = null; return renderMlog(); }
+  if (a === "del") { mlDel = id; mlEdit = null; return renderMlog(); }
+  if (a === "del-no") { mlDel = null; return renderMlog(); }
+  if (a === "save") { const note = $("mlEdit-" + id).value.trim(); if (!note) return; mlEdit = null; ({ error } = await sb.from("manager_log").update({ note, edited_at: new Date().toISOString() }).eq("id", id)); }
+  if (a === "del-yes") { mlDel = null; ({ error } = await sb.from("manager_log").delete().eq("id", id)); }
+  if (error) alert(friendly(error));
+  loadAll();
+});
 
 /* ---------- supplies ---------- */
 let supItems = [], supNeeds = [], supEdit = false, showBought = false;
