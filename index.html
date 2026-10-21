@@ -113,6 +113,15 @@ textarea{min-height:80px;resize:vertical}
 .fu-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:color-mix(in srgb,var(--warn) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));border-radius:12px;padding:10px 14px;font-weight:600}
 .fu-bar button{border:0;background:transparent;color:var(--warn);font-weight:700;padding:4px 0}
 .fu-box{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.replies{display:flex;flex-direction:column;gap:8px;margin-top:4px;padding-left:10px;border-left:2px solid var(--accent-soft)}
+.rp{font-size:.9rem;display:flex;flex-direction:column;gap:1px;min-width:0}
+.rp .who{font-size:.78rem;color:var(--muted)}
+.rp .who b{color:var(--ink);font-weight:600}
+.rp .who .link{font-size:.78rem}
+.arch{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.arch-toggle{align-self:center;border:1px dashed var(--line);background:transparent;color:var(--muted);border-radius:99px;padding:7px 16px;font:inherit;font-weight:600;font-size:.85rem;cursor:pointer}
+.arch-item{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.arch-item .note{color:var(--muted)}
 .foot{font-size:.8rem;color:var(--muted);text-align:center}
 @media (max-width:480px){form{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -225,6 +234,7 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
       <input id="d-search" type="search" placeholder="Search the daily log (e.g. UPS, plumber, Sherwin)">
       <div class="daterow"><label>From<input id="d-from" type="date"></label><label>To<input id="d-to" type="date"></label><button type="button" class="link" id="d-clear" hidden>Clear dates</button></div>
       <div class="feed" id="dailyFeed"></div>
+      <div class="arch" id="d-arch"></div>
     </section>
 
     <!-- INCIDENTS -->
@@ -265,6 +275,7 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
         </div>
       </div>
       <div class="feed" id="logFeed"></div>
+      <div class="arch" id="l-arch"></div>
     </section>
 
     <!-- STAFF NOTES (managers) -->
@@ -458,6 +469,8 @@ let session = null, me = null, previewRole = "", current = "daily";
 let daily = [], fups = {}, incidents = [], res = {}, notes = [], team = [];
 let pwOpen = false;
 let dEdit = null;
+let replies = {}, arch = { d: [], l: [] }, archOpen = { d: false, l: false }, archDel = null, replyOpen = null, rpDel = null;
+const stamp = iso => { if (!iso) return ""; const d = new Date(iso); return (isoLocal(d) === daysAgo(0) ? "" : d.toLocaleDateString(undefined, {month:"short", day:"numeric"}) + " ") + t12(pad(d.getHours()) + ":" + pad(d.getMinutes())); };
 let dcat = "General", fuOnly = false, fuOpen = null, logFilter = "all", sev = "med", openResolve = null, confirmDel = null;
 
 const realMgr = () => me && me.role === "manager";
@@ -522,7 +535,7 @@ function applyRole() {
   $("tab-daily").hidden = !isDesk(); $("tab-log").hidden = !isDesk(); $("tab-supplies").hidden = !isDesk();
   $("tab-staff").hidden = !isMgr(); $("tab-team").hidden = !isMgr();
   $("roleBadge").textContent = roleName(effRole());
-  $("foot").textContent = isMgr() ? "Manager view. Follow-up, resolve and delete controls, Staff notes and Managers show only for managers." : isDesk() ? "Everything you add is visible to the whole team. Keep notes factual." : "Announcements and chat are shared with the whole team.";
+  $("foot").textContent = isMgr() ? "Manager view. Deleted notes go to Deleted history at the bottom of each log; only managers can delete forever." : isDesk() ? "Everything you add is visible to the whole team. Keep notes factual." : "Announcements and chat are shared with the whole team.";
   setTab(current); renderAll();
 }
 $("va-sty").onclick = () => { previewRole = "stylist"; applyRole(); };
@@ -581,7 +594,7 @@ const inRange = (k, day) => { const r = rangeOf(k); return (!r.from || day >= r.
 async function fetchRange(k) {
   if (!rangeOn(k)) { rangeData[k] = null; return; }
   const r = rangeOf(k), col = k === "d" ? "entry_date" : "incident_date";
-  let q = sb.from(k === "d" ? "daily_log" : "incidents").select("*").order(col, { ascending: false }).limit(2000);
+  let q = sb.from(k === "d" ? "daily_log" : "incidents").select("*").is("deleted_at", null).order(col, { ascending: false }).limit(2000);
   if (r.from) q = q.gte(col, r.from);
   if (r.to) q = q.lte(col, r.to);
   const { data } = await q;
@@ -603,9 +616,9 @@ async function onRangeChange(k) {
 async function loadAll() {
   const q = [
     sb.from("staff").select("*").order("name"),
-    sb.from("daily_log").select("*").order("entry_date", {ascending: false}).order("entry_time", {ascending: false}).limit(1000),
+    sb.from("daily_log").select("*").is("deleted_at", null).order("entry_date", {ascending: false}).order("entry_time", {ascending: false}).limit(1000),
     sb.from("followups").select("*"),
-    sb.from("incidents").select("*").order("incident_date", {ascending: false}).order("created_at", {ascending: false}).limit(1000),
+    sb.from("incidents").select("*").is("deleted_at", null).order("incident_date", {ascending: false}).order("created_at", {ascending: false}).limit(1000),
     sb.from("resolutions").select("*"),
   ];
   if (realMgr()) q.push(sb.from("staff_notes").select("*").order("note_date", {ascending: false}).order("created_at", {ascending: false}).limit(1000));
@@ -622,23 +635,28 @@ async function loadAll() {
   mlog = realMgr() ? (r[7].data || []) : [];
   writeups = realMgr() ? (r[8].data || []) : [];
   const since14 = new Date(Date.now() - 14 * 864e5).toISOString();
-  const [ra, rm, rt, rr, rsi, rsn] = await Promise.all([
+  const [ra, rm, rt, rr, rsi, rsn, rrep, rad, ral] = await Promise.all([
     sb.from("announcements").select("*").order("created_at", {ascending: false}).limit(50),
     sb.from("messages").select("*").order("created_at", {ascending: false}).limit(200),
     sb.from("time_off").select("*").order("off_from", {ascending: true}).limit(500),
     realMgr() ? Promise.resolve({ data: [] }) : sb.from("todos").select("*").eq("created_by", me.email).order("created_at", {ascending: false}).limit(30),
     sb.from("supply_items").select("*").eq("active", true).order("sort").order("name"),
     sb.from("supply_needs").select("*").or(`bought.eq.false,bought_at.gte."${since14}"`).order("requested_at", {ascending: false}).limit(500),
+    sb.from("log_replies").select("*").order("created_at", {ascending: true}).limit(3000),
+    sb.from("daily_log").select("*").not("deleted_at", "is", null).order("deleted_at", {ascending: false}).limit(300),
+    sb.from("incidents").select("*").not("deleted_at", "is", null).order("deleted_at", {ascending: false}).limit(300),
   ]);
+  replies = {}; (rrep.data || []).forEach(x => (replies[x.log_id] = replies[x.log_id] || []).push(x));
+  arch = { d: rad.data || [], l: ral.data || [] };
   anns = ra.data || []; msgs = rm.data || []; timeOff = rt.data || []; myReports = rr.data || []; supItems = rsi.data || []; supNeeds = rsn.data || [];
   await Promise.all([fetchRange("d"), fetchRange("l")]);
-  await signPhotos([...daily, ...incidents, ...msgs, ...myReports, ...todos, ...mlog, ...(rangeData.d || []), ...(rangeData.l || [])].map(x => x.photo).concat(writeups.flatMap(w => [w.employee_sig, w.witness_sig, w.manager_sig])));
+  await signPhotos([...daily, ...incidents, ...msgs, ...myReports, ...todos, ...mlog, ...(rangeData.d || []), ...(rangeData.l || []), ...arch.d, ...arch.l].map(x => x.photo).concat(writeups.flatMap(w => [w.employee_sig, w.witness_sig, w.manager_sig])));
   renderAll();
 }
 let reloadTimer = null;
 const scheduleReload = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(loadAll, 400); };
 
-function renderAll() { renderDaily(); renderLog(); renderStaff(); renderTeam(); renderTodo(); renderChat(); renderTime(); renderSupplies(); renderMlog(); renderWriteups(); }
+function renderAll() { renderDaily(); renderLog(); renderArch("d"); renderArch("l"); renderStaff(); renderTeam(); renderTodo(); renderChat(); renderTime(); renderSupplies(); renderMlog(); renderWriteups(); }
 
 /* ---------- staff write-ups ---------- */
 let writeups = [], wuOpen = null, wuSign = null, wuDel = null, wuPad = null;
@@ -1095,12 +1113,17 @@ $("view-team").addEventListener("click", async e => {
 /* ---------- daily log ---------- */
 function mergedDaily() { return (rangeData.d || daily).filter(d => inRange("d", d.entry_date)).map(d => { const f = fups[d.id] || {}; return {...d, fu: !!(d.needs_followup || f.flagged), fuDone: !!f.done, fuNote: f.note || ""}; }); }
 function renderDaily() {
+  const keepRp = replyOpen && $("rp-" + replyOpen) ? $("rp-" + replyOpen).value : null;
+  renderDailyInner();
+  if (keepRp !== null && $("rp-" + replyOpen)) $("rp-" + replyOpen).value = keepRp;
+}
+function renderDailyInner() {
   const all = mergedDaily(), q = $("d-search").value.trim().toLowerCase();
   const waiting = all.filter(d => d.fu && !d.fuDone);
   $("fuBar").hidden = !waiting.length && !fuOnly;
   $("fuText").textContent = waiting.length ? `⚑ ${waiting.length} ${waiting.length === 1 ? "note needs" : "notes need"} manager follow-up` : "No open follow-ups";
   $("fuToggle").textContent = fuOnly ? "Show everything" : "Show only these";
-  const list = all.filter(d => (!q || (d.note + " " + d.category + " " + nameOf(d.created_by)).toLowerCase().includes(q)) && (!fuOnly || (d.fu && !d.fuDone)));
+  const list = all.filter(d => (!q || (d.note + " " + d.category + " " + nameOf(d.created_by) + " " + (replies[d.id] || []).map(x => x.note).join(" ")).toLowerCase().includes(q)) && (!fuOnly || (d.fu && !d.fuDone)));
   if (!all.length && !rangeOn("d")) { $("dailyFeed").innerHTML = `<div class="empty"><b>Nothing logged yet</b>Type what happened above and tap “Add to log.” The time fills in for you.</div>`; return; }
   if (!list.length) { $("dailyFeed").innerHTML = `<div class="empty">${rangeOn("d") && !q ? "Nothing logged between those dates." : "Nothing matches that search."}</div>`; return; }
   const days = {}; list.forEach(d => (days[d.entry_date] = days[d.entry_date] || []).push(d));
@@ -1111,14 +1134,21 @@ function renderDaily() {
       let mgr = "";
       const canEdit = isMgr() || (isDesk() && d.created_by === me.email);
       const editBtn = canEdit ? `<button class="link" data-dedit="open" data-id="${d.id}">Edit</button>` : "";
+      const delBtn = canEdit ? `<button class="link del" data-arch="ask" data-k="d" data-id="${d.id}">Delete</button>` : "";
+      const rs = replies[d.id] || [];
+      const replyBtn = isDesk() ? `<button class="link" data-rp="open" data-id="${d.id}">Reply</button>` : "";
+      const rpHtml = rs.length ? `<div class="replies">${rs.map(x => {
+        const mine = isMgr() || x.created_by === me.email;
+        const del = !mine ? "" : rpDel === x.id ? ` · Delete reply? <button class="link del" data-rp="del-yes" data-id="${x.id}">Yes</button> <button class="link" data-rp="del-no">No</button>` : ` · <button class="link del" data-rp="del" data-id="${x.id}">Delete</button>`;
+        return `<div class="rp"><span class="who"><b>${esc(nameOf(x.created_by))}</b> · ${esc(stamp(x.created_at))}${del}</span><span class="note">${esc(x.note)}</span></div>`;
+      }).join("")}</div>` : "";
+      const rpBox = replyOpen === d.id ? `<div class="fu-box"><textarea id="rp-${d.id}" maxlength="2000" placeholder="Write a reply…" aria-label="Reply to this note"></textarea><div class="actions"><button class="primary" data-rp="send" data-id="${d.id}">Send reply</button><button class="link" data-rp="cancel">Cancel</button><span class="form-err" id="rpErr"></span></div></div>` : "";
       if (dEdit === d.id) mgr = `<div class="fu-box"><textarea id="dEdit-${d.id}" maxlength="4000" aria-label="Edit note">${esc(d.note)}</textarea><div class="actions"><button class="primary" data-dedit="save" data-id="${d.id}">Save</button><button class="link" data-dedit="cancel">Cancel</button><span class="form-err" id="dEditErr"></span></div></div>`;
-      else if (isMgr()) {
-        if (fuOpen === d.id) mgr = `<div class="fu-box"><textarea id="fu-${d.id}" maxlength="4000" placeholder="What you did or decided (optional)">${esc(d.fuNote)}</textarea><div class="actions"><button class="primary" data-dact="fu-save" data-id="${d.id}">Mark followed up</button><button class="link" data-dact="fu-cancel">Cancel</button></div></div>`;
-        else if (confirmDel === "d:" + d.id) mgr = `<div class="actions"><span class="meta">Delete this note for everyone?</span><button class="link del" data-dact="del-yes" data-id="${d.id}">Yes, delete</button><button class="link" data-dact="del-no">Keep it</button></div>`;
-        else mgr = `<div class="actions">${d.fu && !d.fuDone ? `<button class="link" data-dact="fu-open" data-id="${d.id}">Follow up…</button>` : d.fuDone ? `<button class="link" data-dact="fu-reopen" data-id="${d.id}">Reopen</button>` : `<button class="link" data-dact="fu-flag" data-id="${d.id}">Flag for follow-up</button>`}${editBtn}<button class="link del" data-dact="del" data-id="${d.id}">Delete</button></div>`;
-      }
-      else if (editBtn) mgr = `<div class="actions">${editBtn}</div>`;
-      return `<div class="dl${d.fu && !d.fuDone ? " flag" : ""}"><time>${esc(t12(d.entry_time))}</time><div class="body"><div><span class="tag">${esc(d.category)}</span>${badge}</div><p class="note">${esc(d.note)}</p>${photoHtml(d.photo)}${reply}<span class="meta">${esc(nameOf(d.created_by))}${d.edited_at ? " · edited" : ""}</span>${mgr}</div></div>`;
+      else if (confirmDel === "d:" + d.id) mgr = `<div class="actions"><span class="meta">Move this note to deleted history?</span><button class="link del" data-arch="yes" data-k="d" data-id="${d.id}">Yes, delete</button><button class="link" data-arch="no" data-k="d">Keep it</button></div>`;
+      else if (isMgr() && fuOpen === d.id) mgr = `<div class="fu-box"><textarea id="fu-${d.id}" maxlength="4000" placeholder="What you did or decided (optional)">${esc(d.fuNote)}</textarea><div class="actions"><button class="primary" data-dact="fu-save" data-id="${d.id}">Mark followed up</button><button class="link" data-dact="fu-cancel">Cancel</button></div></div>`;
+      else if (isMgr()) mgr = `<div class="actions">${replyBtn}${d.fu && !d.fuDone ? `<button class="link" data-dact="fu-open" data-id="${d.id}">Follow up…</button>` : d.fuDone ? `<button class="link" data-dact="fu-reopen" data-id="${d.id}">Reopen</button>` : `<button class="link" data-dact="fu-flag" data-id="${d.id}">Flag for follow-up</button>`}${editBtn}${delBtn}</div>`;
+      else if (replyBtn || editBtn) mgr = `<div class="actions">${replyBtn}${editBtn}${delBtn}</div>`;
+      return `<div class="dl${d.fu && !d.fuDone ? " flag" : ""}"><time>${esc(t12(d.entry_time))}</time><div class="body"><div><span class="tag">${esc(d.category)}</span>${badge}</div><p class="note">${esc(d.note)}</p>${photoHtml(d.photo)}<span class="meta">${esc(nameOf(d.created_by))}${d.edited_at ? " · edited" : ""}</span>${reply}${rpHtml}${rpBox}${mgr}</div></div>`;
     }).join("")}</div>`).join("");
 }
 $("d-cats").addEventListener("click", e => { const b = e.target.closest(".cat"); if (!b) return; dcat = b.textContent; $("d-cats").querySelectorAll(".cat").forEach(c => c.setAttribute("aria-pressed", c === b)); });
@@ -1137,6 +1167,23 @@ $("dailyForm").addEventListener("submit", async e => {
   loadAll();
 });
 $("dailyFeed").addEventListener("click", async e => {
+  const rb = e.target.closest("[data-rp]");
+  if (rb) {
+    const a = rb.dataset.rp, id = rb.dataset.id;
+    if (a === "open") { replyOpen = id; dEdit = null; confirmDel = null; fuOpen = null; renderDaily(); const t = $("rp-" + id); if (t) t.focus(); return; }
+    if (a === "cancel") { replyOpen = null; return renderDaily(); }
+    if (a === "del") { rpDel = id; return renderDaily(); }
+    if (a === "del-no") { rpDel = null; return renderDaily(); }
+    if (a === "del-yes") { rpDel = null; const { error } = await sb.from("log_replies").delete().eq("id", id); if (error) alert(friendly(error)); return loadAll(); }
+    if (a === "send") {
+      const note = $("rp-" + id).value.trim(); if (!note) return;
+      rb.disabled = true;
+      const { error } = await sb.from("log_replies").insert({ log_id: id, note, created_by: me.email });
+      if (error) { rb.disabled = false; $("rpErr").textContent = friendly(error); return; }
+      replyOpen = null; return loadAll();
+    }
+    return;
+  }
   const eb = e.target.closest("[data-dedit]");
   if (eb) {
     const a = eb.dataset.dedit, id = eb.dataset.id;
@@ -1164,6 +1211,44 @@ $("dailyFeed").addEventListener("click", async e => {
   if (["fu-save", "fu-reopen", "fu-flag", "del-yes"].includes(a)) loadAll(); else renderDaily();
 });
 
+/* ---------- deleted history ---------- */
+function renderArch(k) {
+  const box = $(k + "-arch"); if (!box) return;
+  const list = isDesk() ? arch[k] : [];
+  if (!list.length) { box.innerHTML = ""; return; }
+  let h = `<button class="arch-toggle" data-arch="toggle" data-k="${k}" aria-expanded="${archOpen[k]}">${archOpen[k] ? "Hide deleted history" : `🗑 Deleted history (${list.length})`}</button>`;
+  if (archOpen[k]) h += list.map(x => {
+    const canRestore = isMgr() || x.deleted_by === me.email;
+    const title = k === "d" ? `<span class="tag">${esc(x.category)}</span> <span class="meta">${esc(fmt(x.entry_date))} · ${esc(t12(x.entry_time))}</span>` : `<span class="name">${esc(x.client)}</span> <span class="meta">${esc(fmt(x.incident_date))} · ${esc(x.issue_type)}</span>`;
+    const forever = !isMgr() ? "" : archDel === x.id ? `<span class="meta">Delete forever? This can't be undone.</span><button class="link del" data-arch="forever-yes" data-k="${k}" data-id="${x.id}">Yes, delete forever</button><button class="link" data-arch="forever-no" data-k="${k}">Cancel</button>` : `<button class="link del" data-arch="forever" data-k="${k}" data-id="${x.id}">Delete forever</button>`;
+    return `<div class="arch-item"><div>${title}</div><p class="note">${esc(x.note)}</p>${photoHtml(x.photo)}<span class="meta">Written by ${esc(nameOf(x.created_by))} · deleted by ${esc(nameOf(x.deleted_by))} ${esc(stamp(x.deleted_at))}</span><div class="actions">${canRestore ? `<button class="link" data-arch="restore" data-k="${k}" data-id="${x.id}">Restore</button>` : ""}${forever}</div></div>`;
+  }).join("");
+  box.innerHTML = h;
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-arch]"); if (!b) return;
+  const a = b.dataset.arch, k = b.dataset.k, id = b.dataset.id;
+  const kind = k === "d" ? "daily" : "incident", table = k === "d" ? "daily_log" : "incidents";
+  const rr = () => k === "d" ? renderDaily() : renderLog();
+  if (a === "ask") { confirmDel = (k === "d" ? "d:" : "i:") + id; openResolve = null; fuOpen = null; dEdit = null; return rr(); }
+  if (a === "no") { confirmDel = null; return rr(); }
+  if (a === "toggle") { archOpen[k] = !archOpen[k]; archDel = null; return renderArch(k); }
+  if (a === "forever") { archDel = id; return renderArch(k); }
+  if (a === "forever-no") { archDel = null; return renderArch(k); }
+  let error = null, ok = true;
+  b.disabled = true;
+  if (a === "yes") { confirmDel = null; const r = await sb.rpc("archive_entry", { p_kind: kind, p_id: id }); error = r.error; ok = !!r.data; }
+  else if (a === "restore") { const r = await sb.rpc("archive_entry", { p_kind: kind, p_id: id, p_restore: true }); error = r.error; ok = !!r.data; }
+  else if (a === "forever-yes") {
+    archDel = null;
+    const row = arch[k].find(x => x.id === id);
+    const r = await sb.from(table).delete().eq("id", id).select("id"); error = r.error; ok = !!(r.data && r.data.length);
+    if (ok && row && row.photo) sb.storage.from("photos").remove([row.photo]).catch(() => {});
+  } else return;
+  if (error || !ok) alert(error ? friendly(error) : "You don't have permission to do that.");
+  loadAll();
+});
+
 /* ---------- incidents ---------- */
 function renderLog() {
   const q = $("l-search").value.trim().toLowerCase(), wk = daysAgo(7);
@@ -1187,9 +1272,13 @@ function renderLog() {
     let act = "";
     if (isMgr()) {
       if (openResolve === l.id) act = `<div class="resolve-box"><textarea id="rn-${l.id}" maxlength="4000" placeholder="How it was handled (optional)">${esc(r.note || "")}</textarea><div class="actions"><button class="primary" data-act="save-res" data-id="${l.id}">${r.done ? "Save note" : "Mark resolved"}</button><button class="link" data-act="cancel-res">Cancel</button></div></div>`;
-      else if (confirmDel === "i:" + l.id) act = `<div class="actions"><span class="meta">Delete this entry for everyone?</span><button class="link del" data-act="del-yes" data-id="${l.id}">Yes, delete</button><button class="link" data-act="del-no">Keep it</button></div>`;
-      else act = `<div class="actions">${r.done ? `<button class="link done" data-act="reopen" data-id="${l.id}">✓ Resolved · reopen</button><button class="link" data-act="resolve" data-id="${l.id}">Edit manager note</button>` : `<button class="link" data-act="resolve" data-id="${l.id}">Resolve…</button>`}<button class="link del" data-act="del" data-id="${l.id}">Delete</button></div>`;
-    } else if (r.done) act = `<div class="meta" style="color:var(--ok);font-weight:600">✓ Resolved by manager</div>`;
+      else if (confirmDel === "i:" + l.id) act = `<div class="actions"><span class="meta">Move this entry to deleted history?</span><button class="link del" data-arch="yes" data-k="l" data-id="${l.id}">Yes, delete</button><button class="link" data-arch="no" data-k="l">Keep it</button></div>`;
+      else act = `<div class="actions">${r.done ? `<button class="link done" data-act="reopen" data-id="${l.id}">✓ Resolved · reopen</button><button class="link" data-act="resolve" data-id="${l.id}">Edit manager note</button>` : `<button class="link" data-act="resolve" data-id="${l.id}">Resolve…</button>`}<button class="link del" data-arch="ask" data-k="l" data-id="${l.id}">Delete</button></div>`;
+    } else {
+      const own = isDesk() && l.created_by === me.email;
+      if (own && confirmDel === "i:" + l.id) act = `<div class="actions"><span class="meta">Move this entry to deleted history?</span><button class="link del" data-arch="yes" data-k="l" data-id="${l.id}">Yes, delete</button><button class="link" data-arch="no" data-k="l">Keep it</button></div>`;
+      else act = (r.done ? `<div class="meta" style="color:var(--ok);font-weight:600">✓ Resolved by manager</div>` : "") + (own ? `<div class="actions"><button class="link del" data-arch="ask" data-k="l" data-id="${l.id}">Delete</button></div>` : "");
+    }
     return `<article class="entry${r.done ? " resolved" : ""}" style="--stripe:${stripe[l.severity] || "var(--line)"}">
       <div class="row"><span><span class="name">${esc(l.client)}</span>${n > 1 ? `<span class="repeat">${n} entries</span>` : ""}</span><span class="meta">${fmt(l.incident_date)}</span></div>
       <div class="row"><span class="tag">${esc(l.issue_type)}</span><span class="meta">${sevName[l.severity] || ""}${l.stylist ? " · with " + esc(l.stylist) : ""}</span></div>
