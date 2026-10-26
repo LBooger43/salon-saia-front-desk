@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Loopd-In">
 <title>Loopd-In · Salon Saia</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@700&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap">
 <style>
 html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -36,6 +39,11 @@ body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15p
 .wrap{max-width:720px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
 header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
 h1{font-family:var(--display);font-size:1.75rem;line-height:1.1;margin:0;text-wrap:balance}
+h1.brand{font-family:"Poppins",var(--display);font-weight:700;font-size:2rem;letter-spacing:-.01em;color:var(--ink);display:flex;align-items:baseline}
+.brand .loop{width:1.3em;height:.66em;margin:0 .03em;align-self:baseline;transform:translateY(.02em)}
+.brand-in{color:#2f6be0}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .brand-in{color:#6f9bf5}}
+:root[data-theme="dark"] .brand-in{color:#6f9bf5}
 .eyebrow{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
 .who{display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--muted)}
 .who img{width:26px;height:26px;border-radius:50%}
@@ -159,7 +167,7 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
   <header>
     <div>
       <div class="eyebrow">Salon Saia · Cary</div>
-      <h1>Loopd<span style="color:var(--accent)">-In</span></h1>
+      <h1 class="brand" aria-label="Loopd-In">L<svg class="loop" viewBox="0 0 300 150" aria-hidden="true"><defs><linearGradient id="loopGrad" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#4f8ef7"/><stop offset="1" stop-color="#2f6be0"/></linearGradient></defs><path d="M150 75C118 40 96 28 72 28 44 28 24 49 24 75s20 47 48 47c24 0 46-12 78-47 32-35 54-47 78-47 28 0 48 21 48 47s-20 47-48 47c-24 0-46-12-78-47z" fill="none" stroke="url(#loopGrad)" stroke-width="36" stroke-linejoin="round"/></svg>pd<span class="brand-in">-In</span></h1>
     </div>
     <div class="who" id="who" hidden>
       <span class="avatar" id="avatar"></span><span id="whoName"></span><span class="role" id="roleBadge"></span>
