@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#7a3b69">
+<meta name="theme-color" content="#16213e">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Front Desk">
-<title>Salon Saia Front Desk Log</title>
+<meta name="apple-mobile-web-app-title" content="Loopd-In">
+<title>Loopd-In · Salon Saia</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap">
 <style>
 html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -15,22 +15,22 @@ body{margin:0}
 
 /* Layout: phone-first single column — header, tab switch (Client log / Staff notes for owner), summary strip, add sheet, filters, feed */
 :root{
-  --bg:#f6f4f7;--surface:#ffffff;--ink:#231d2b;--muted:#6e6578;--line:#e4dfe8;
-  --accent:#7a3b69;--accent-ink:#ffffff;--accent-soft:#f2e6ef;
-  --private:#3d4f8a;--private-soft:#e7ebf6;
+  --bg:#f5f6fb;--surface:#ffffff;--ink:#16213e;--muted:#5f6b85;--line:#e0e4f0;
+  --accent:#5a56d6;--accent-ink:#ffffff;--accent-soft:#ecebfc;
+  --private:#8247b8;--private-soft:#f3eafb;
   --crit:#c2412d;--warn:#b07a0e;--ok:#2f8a5b;
   --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
   --body:"Figtree",ui-sans-serif,system-ui,-apple-system,sans-serif;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#17141b;--surface:#211d27;--ink:#efeaf3;--muted:#a59cae;--line:#342e3c;
-  --accent:#d38bbf;--accent-ink:#1b1420;--accent-soft:#3a2836;
-  --private:#9fb1ec;--private-soft:#262c40;
+  --bg:#11152a;--surface:#1a2036;--ink:#eef0f8;--muted:#9ea6c0;--line:#2c3352;
+  --accent:#a3a0f5;--accent-ink:#141733;--accent-soft:#2a2b55;
+  --private:#cba8f0;--private-soft:#33284a;
   --crit:#ef7b67;--warn:#e7b04a;--ok:#5cc28c;color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#17141b;--surface:#211d27;--ink:#efeaf3;--muted:#a59cae;--line:#342e3c;
-  --accent:#d38bbf;--accent-ink:#1b1420;--accent-soft:#3a2836;
-  --private:#9fb1ec;--private-soft:#262c40;
+  --bg:#11152a;--surface:#1a2036;--ink:#eef0f8;--muted:#9ea6c0;--line:#2c3352;
+  --accent:#a3a0f5;--accent-ink:#141733;--accent-soft:#2a2b55;
+  --private:#cba8f0;--private-soft:#33284a;
   --crit:#ef7b67;--warn:#e7b04a;--ok:#5cc28c;color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5}
 .wrap{max-width:720px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
@@ -159,7 +159,7 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
   <header>
     <div>
       <div class="eyebrow">Salon Saia · Cary</div>
-      <h1>Front Desk Log</h1>
+      <h1>Loopd<span style="color:var(--accent)">-In</span></h1>
     </div>
     <div class="who" id="who" hidden>
       <span class="avatar" id="avatar"></span><span id="whoName"></span><span class="role" id="roleBadge"></span>
