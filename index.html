@@ -488,7 +488,7 @@ const roleName = r => r === "manager" ? "Manager" : r === "stylist" ? "Stylist" 
 let session = null, me = null, previewRole = "", current = "daily";
 let daily = [], fups = {}, incidents = [], res = {}, notes = [], team = [];
 let pwOpen = false;
-let dEdit = null;
+let dEdit = null, rpEdit = null;
 let replies = {}, arch = { d: [], l: [] }, archOpen = { d: false, l: false }, archDel = null, replyOpen = null, rpDel = null;
 const stamp = iso => { if (!iso) return ""; const d = new Date(iso); return (isoLocal(d) === daysAgo(0) ? "" : d.toLocaleDateString(undefined, {month:"short", day:"numeric"}) + " ") + t12(pad(d.getHours()) + ":" + pad(d.getMinutes())); };
 let dcat = "General", fuOnly = false, fuOpen = null, logFilter = "all", sev = "med", openResolve = null, confirmDel = null;
@@ -1197,8 +1197,10 @@ function renderDailyInner() {
       const replyBtn = isDesk() ? `<button class="link" data-rp="open" data-id="${d.id}">Reply</button>` : "";
       const rpHtml = rs.length ? `<div class="replies">${rs.map(x => {
         const mine = isMgr() || x.created_by === me.email;
-        const del = !mine ? "" : rpDel === x.id ? ` · Delete reply? <button class="link del" data-rp="del-yes" data-id="${x.id}">Yes</button> <button class="link" data-rp="del-no">No</button>` : ` · <button class="link del" data-rp="del" data-id="${x.id}">Delete</button>`;
-        return `<div class="rp"><span class="who"><b>${esc(nameOf(x.created_by))}</b> · ${esc(stamp(x.created_at))}${del}</span><span class="note">${esc(x.note)}</span></div>`;
+        const canEditRp = x.created_by === me.email;
+        const del = !mine ? "" : rpDel === x.id ? ` · Delete reply? <button class="link del" data-rp="del-yes" data-id="${x.id}">Yes</button> <button class="link" data-rp="del-no">No</button>` : `${canEditRp ? ` · <button class="link" data-rp="edit" data-id="${x.id}">Edit</button>` : ""} · <button class="link del" data-rp="del" data-id="${x.id}">Delete</button>`;
+        if (rpEdit === x.id) return `<div class="rp"><span class="who"><b>${esc(nameOf(x.created_by))}</b> · ${esc(stamp(x.created_at))}</span><div class="fu-box"><textarea id="rpEdit-${x.id}" maxlength="2000" aria-label="Edit reply">${esc(x.note)}</textarea><div class="actions"><button class="primary" data-rp="edit-save" data-id="${x.id}">Save</button><button class="link" data-rp="edit-cancel">Cancel</button><span class="form-err" id="rpEditErr"></span></div></div></div>`;
+        return `<div class="rp"><span class="who"><b>${esc(nameOf(x.created_by))}</b> · ${esc(stamp(x.created_at))}${x.edited_at ? " · edited" : ""}${del}</span><span class="note">${esc(x.note)}</span></div>`;
       }).join("")}</div>` : "";
       const rpBox = replyOpen === d.id ? `<div class="fu-box"><textarea id="rp-${d.id}" maxlength="2000" placeholder="Write a reply…" aria-label="Reply to this note"></textarea><div class="actions"><button class="primary" data-rp="send" data-id="${d.id}">Send reply</button><button class="link" data-rp="cancel">Cancel</button><span class="form-err" id="rpErr"></span></div></div>` : "";
       if (dEdit === d.id) mgr = `<div class="fu-box"><textarea id="dEdit-${d.id}" maxlength="4000" aria-label="Edit note">${esc(d.note)}</textarea><div class="actions"><button class="primary" data-dedit="save" data-id="${d.id}">Save</button><button class="link" data-dedit="cancel">Cancel</button><span class="form-err" id="dEditErr"></span></div></div>`;
@@ -1230,7 +1232,15 @@ $("dailyFeed").addEventListener("click", async e => {
     const a = rb.dataset.rp, id = rb.dataset.id;
     if (a === "open") { replyOpen = id; dEdit = null; confirmDel = null; fuOpen = null; renderDaily(); const t = $("rp-" + id); if (t) t.focus(); return; }
     if (a === "cancel") { replyOpen = null; return renderDaily(); }
-    if (a === "del") { rpDel = id; return renderDaily(); }
+    if (a === "del") { rpDel = id; rpEdit = null; return renderDaily(); }
+    if (a === "edit") { rpEdit = id; rpDel = null; replyOpen = null; dEdit = null; renderDaily(); const t = $("rpEdit-" + id); if (t) t.focus(); return; }
+    if (a === "edit-cancel") { rpEdit = null; return renderDaily(); }
+    if (a === "edit-save") {
+      const note = $("rpEdit-" + id).value.trim(); if (!note) return;
+      const { data, error } = await sb.from("log_replies").update({ note, edited_at: new Date().toISOString() }).eq("id", id).select("id");
+      if (error || !data || !data.length) { $("rpEditErr").textContent = error ? friendly(error) : "You can only edit your own replies."; return; }
+      rpEdit = null; return loadAll();
+    }
     if (a === "del-no") { rpDel = null; return renderDaily(); }
     if (a === "del-yes") { rpDel = null; const { error } = await sb.from("log_replies").delete().eq("id", id); if (error) alert(friendly(error)); return loadAll(); }
     if (a === "send") {
