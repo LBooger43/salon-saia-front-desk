@@ -329,6 +329,18 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
 
     <!-- TEAM CHAT (everyone) -->
     <section id="view-chat" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="quick" id="hbBox" style="border:2px solid var(--accent)">
+        <h2 class="h2">📘 Employee handbook</h2>
+        <p class="meta" style="margin:0" id="hbMeta">Read it, then sign that you received it.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="primary" id="hbRead" style="flex:1;min-width:140px">Read handbook</button>
+          <a class="ghost" id="hbSign" href="https://form.jotform.com/220726080750046" target="_blank" rel="noopener" style="flex:1;min-width:140px;text-align:center;text-decoration:none">Sign receipt ↗</a>
+        </div>
+        <div id="hbMgr" hidden style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button type="button" class="ghost" id="hbUpBtn">Upload new handbook (PDF)</button><input type="file" id="hbFile" accept="application/pdf" hidden>
+          <span class="meta" id="hbUpMsg">Managers only. Staff always see the newest one.</span>
+        </div>
+      </div>
       <div class="quick">
         <h2 class="h2">📣 Announcements</h2>
         <form id="annForm" class="plain" hidden>
@@ -534,6 +546,7 @@ function applyRole() {
   $("previewText").textContent = `You're seeing what ${previewRole === "stylist" ? "stylists" : "front desk"} see.`;
   $("tab-daily").hidden = !isDesk(); $("tab-log").hidden = !isDesk(); $("tab-supplies").hidden = !isDesk();
   $("tab-staff").hidden = !isMgr(); $("tab-team").hidden = !isMgr();
+  $("hbMgr").hidden = !isMgr(); refreshHandbookMeta();
   $("roleBadge").textContent = roleName(effRole());
   $("foot").textContent = isMgr() ? "Manager view. Deleted notes go to Deleted history at the bottom of each log; only managers can delete forever." : isDesk() ? "Everything you add is visible to the whole team. Keep notes factual." : "Announcements and chat are shared with the whole team.";
   setTab(current); renderAll();
@@ -1013,6 +1026,38 @@ $("view-time").addEventListener("click", async e => {
   const { error } = await sb.from("time_off").update(row).eq("id", id);
   if (error) alert(friendly(error));
   loadAll();
+});
+
+/* ---------- employee handbook ---------- */
+async function latestHandbook() {
+  const { data, error } = await sb.storage.from("photos").list("handbook", { limit: 1, sortBy: { column: "created_at", order: "desc" } });
+  if (error || !data) return null;
+  const f = data.find(x => x.name && x.name.toLowerCase().endsWith(".pdf"));
+  return f ? { path: "handbook/" + f.name, when: f.created_at } : null;
+}
+async function refreshHandbookMeta() {
+  const h = await latestHandbook();
+  $("hbMeta").textContent = h ? `Updated ${new Date(h.when).toLocaleDateString()}. Read it, then sign that you received it.` : (isMgr() ? "No handbook uploaded yet. Upload the PDF below." : "The handbook isn't posted yet. Ask a manager.");
+}
+$("hbRead").addEventListener("click", async () => {
+  const w = window.open("", "_blank");
+  const h = await latestHandbook();
+  if (!h) { if (w) w.close(); alert(isMgr() ? "No handbook uploaded yet. Use “Upload new handbook” first." : "The handbook isn't posted yet. Ask a manager."); return; }
+  const { data, error } = await sb.storage.from("photos").createSignedUrl(h.path, 60 * 60);
+  if (error || !data) { if (w) w.close(); alert("Couldn't open the handbook. Try again."); return; }
+  if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
+});
+$("hbUpBtn").addEventListener("click", () => $("hbFile").click());
+$("hbFile").addEventListener("change", async e => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  if (!isMgr()) return;
+  if (file.type !== "application/pdf") { $("hbUpMsg").textContent = "That isn't a PDF. Pick the handbook PDF."; return; }
+  $("hbUpMsg").textContent = "Uploading…";
+  const path = `handbook/Salon_Saia_Handbook_${Date.now()}.pdf`;
+  const { error } = await sb.storage.from("photos").upload(path, file, { contentType: "application/pdf" });
+  $("hbUpMsg").textContent = error ? "Upload failed. Try again." : "Handbook uploaded. Staff now see this one.";
+  refreshHandbookMeta();
 });
 
 /* ---------- team chat, announcements, reports ---------- */
