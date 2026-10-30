@@ -403,10 +403,17 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
         <div class="feed" id="ooUpcoming"></div>
         <button type="button" class="link" id="ooPastToggle"></button>
         <div class="feed" id="ooPast" hidden></div>
+        <div class="quick" style="margin-top:6px">
+          <h2 class="h2">📁 Goal files</h2>
+          <p class="meta" style="margin:0">Every goal sheet a team member has filled out, newest first.</p>
+          <label>Team member<select id="gfWho"></select></label>
+          <div class="feed" id="gfList"></div>
+        </div>
       </div>
       <div id="ooMineWrap" style="display:flex;flex-direction:column;gap:10px">
         <h2 class="h2">My 1:1s</h2>
         <div class="feed" id="ooMine"></div>
+        <div class="quick" id="gfMineBox" style="margin-top:6px"><h2 class="h2">📁 My goal sheets</h2><div class="feed" id="gfMine"></div></div>
       </div>
     </section>
 
@@ -1123,6 +1130,47 @@ function goalPrint(r, it) {
   const go = () => setTimeout(() => window.print(), 150);
   if (img && !img.complete) { img.onload = go; img.onerror = go; } else go();
 }
+let gfOpen = null;
+function fileItem(g) {
+  const r1 = oos.find(x => x.id === g.one_on_one_id);
+  const r = r1 || { id: "f" + g.id, created_by: g.created_by, meet_date: (g.updated_at || g.created_at).slice(0, 10), status: "done" };
+  const it = { kind: g.kind, period: g.period, sheet: g, title: g.kind === "smart" ? `SMART Goal Planning (${g.period})` : `Monthly Goals (${monthName(g.period)})` };
+  return { r, it };
+}
+function goalFiles(email, box) {
+  const sk = g => g.kind === "smart" ? g.period + "-13" : g.period;
+  const list = goals.filter(g => g.created_by === email).sort((a, b) => sk(b).localeCompare(sk(a)));
+  if (!list.length) { $(box).innerHTML = `<div class="meta">No goal sheets yet.</div>`; return; }
+  const latestM = list.find(g => g.kind === "monthly"), latestS = list.find(g => g.kind === "smart");
+  $(box).innerHTML = list.map(g => {
+    const { it } = fileItem(g);
+    const cur = g === latestM || g === latestS ? ` <span class="fu ok">Current</span>` : "";
+    const open = gfOpen === g.id;
+    return `<div class="todo"><div class="body"><div class="row" style="gap:8px;flex-wrap:wrap"><span>📝 ${esc(it.title)}${cur}</span><span class="actions" style="gap:10px"><button class="link" data-gf-act="${open ? "hide" : "view"}" data-id="${g.id}">${open ? "Hide" : "View"}</button><button class="link" data-gf-act="print" data-id="${g.id}">Print / save</button></span></div>${open ? goalView(it) : ""}</div></div>`;
+  }).join("");
+}
+function renderGoalFiles() {
+  if (!me) return;
+  if (isMgr()) {
+    const sel = $("gfWho"), cur = sel.value;
+    const people = team.filter(t => t.role !== "manager" || goals.some(g => g.created_by === t.email)).sort((a, b) => a.name.localeCompare(b.name));
+    sel.innerHTML = `<option value="">Choose someone…</option>` + people.map(t => { const n = goals.filter(g => g.created_by === t.email).length; return `<option value="${esc(t.email)}">${esc(t.name)}${n ? ` (${n})` : ""}</option>`; }).join("");
+    sel.value = cur;
+    if (sel.value) goalFiles(sel.value, "gfList"); else $("gfList").innerHTML = "";
+  }
+  const mine = goals.some(g => g.created_by === me.email);
+  $("gfMineBox").hidden = isMgr() && !mine;
+  goalFiles(me.email, "gfMine");
+}
+$("gfWho").addEventListener("change", () => { gfOpen = null; renderGoalFiles(); });
+$("view-oo").addEventListener("click", e => {
+  const b = e.target.closest("[data-gf-act]"); if (!b) return;
+  const g = goals.find(x => x.id === b.dataset.id); if (!g) return;
+  const act = b.dataset.gfAct;
+  if (act === "view") { gfOpen = g.id; return renderGoalFiles(); }
+  if (act === "hide") { gfOpen = null; return renderGoalFiles(); }
+  if (act === "print") { const { r, it } = fileItem(g); goalPrint(r, it); }
+});
 function goalsBlock(r, mgrView) {
   const items = sheetsFor(r); if (!items.length) return "";
   const mine = r.created_by === me.email && !mgrView;
@@ -1194,6 +1242,7 @@ function renderOO() {
   const mine = oos.filter(r => r.created_by === me.email);
   $("ooMineWrap").hidden = isMgr() && !mine.length;
   $("ooMine").innerHTML = mine.length ? mine.map(r => ooRow(r, false)).join("") : `<div class="meta">You haven't requested a 1:1 yet.</div>`;
+  renderGoalFiles();
   if (!$("oo-date").value) $("oo-date").min = today;
 }
 $("ooPastToggle").onclick = () => { ooShowPast = !ooShowPast; renderOO(); };
