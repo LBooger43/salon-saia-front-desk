@@ -157,7 +157,7 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
 .wu-item{display:flex;gap:8px;align-items:center}.wu-item input[type=text]{flex:1;min-width:0}.wu-item input[type=date]{width:auto;flex:none}
 .wu-sec{display:flex;flex-direction:column;gap:2px}.wu-sec b{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 #printArea{display:none}
-@media print{body{background:#fff}.wrap{display:none!important}#printArea{display:block!important;color:#000;font-family:Figtree,sans-serif;padding:24px}#printArea img{max-width:240px;max-height:100px}#printArea h1{font-size:22px;margin:0 0 4px}#printArea h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 4px}#printArea p{margin:0;white-space:pre-wrap}#printArea table{border-collapse:collapse;width:100%}#printArea td{border:1px solid #999;padding:4px 6px;font-size:12px;vertical-align:top}}
+@media print{body{background:#fff}.wrap{display:none!important}#printArea{display:block!important;color:#000;font-family:Figtree,sans-serif;padding:24px}#printArea img{max-width:240px;max-height:100px}#printArea h1{font-size:22px;margin:0 0 4px}#printArea h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 4px}#printArea p{margin:0;white-space:pre-wrap}#printArea table{border-collapse:collapse;width:100%}#printArea td{border:1px solid #999;padding:4px 6px;font-size:12px;vertical-align:top}#printArea .gp{font-family:Georgia,"Times New Roman",serif;font-size:14px;max-width:640px;margin:0 auto}#printArea .gp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}#printArea .gp-head img{width:76px;height:76px}#printArea .gp-head>div{min-width:180px}#printArea .gp-head>div:last-child{text-align:right}#printArea .gp-title{font-family:inherit;text-align:center;font-weight:400;font-size:18px;margin:4px 0 22px}#printArea .gp-sec{margin-bottom:18px}#printArea .gp-ln{border-bottom:1px solid #888;min-height:28px;line-height:20px;padding-top:8px;white-space:pre-wrap}#printArea .gp-row{display:flex;gap:40px;margin:0 0 16px}#printArea .gp-row>div{flex:1}#printArea .gp-line{display:inline-block;min-width:150px;border-bottom:1px solid #888}#printArea .gp-help{margin-top:26px;font-size:12.5px;line-height:1.6}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
 </head>
@@ -1105,6 +1105,24 @@ function goalView(it) {
     : row("Professional", esc(v.professional)) + row("Personal", esc(v.personal)) + row("Service goal", money(v.service_month, v.service_week, v.service_day)) + row("Retail goal", money(v.retail_month, v.retail_week, v.retail_day)) + row("Notes", esc(v.notes));
   return `<div class="mgr" style="display:flex;flex-direction:column;gap:6px"><b>${esc(it.title)}</b>${body || `<span class="meta">Left blank.</span>`}<span class="meta">Updated ${whenFull(it.sheet.updated_at)}</span></div>`;
 }
+function goalPrint(r, it) {
+  const v = (it.sheet && it.sheet.data) || {};
+  const box = (label, val, rows) => { const ls = String(val || "").split("\n").filter(x => x.trim()); while (ls.length < rows) ls.push(""); return `<div class="gp-sec"><div class="gp-lbl">${label}</div>${ls.map(x => `<div class="gp-ln">${esc(x) || "&nbsp;"}</div>`).join("")}</div>`; };
+  const amt = x => x ? "$" + esc(String(x).replace(/^\$/, "")) : "";
+  const pair = (l1, v1, l2, v2) => `<div class="gp-row"><div><span class="gp-lbl">${l1}</span> <span class="gp-line">${amt(v1)}</span></div><div><span class="gp-lbl">${l2}</span> <span class="gp-line">${amt(v2)}</span></div></div>`;
+  const head = `<div class="gp-head"><div><span class="gp-lbl">Date:</span> ${fmt(ooDay(r))}</div><img src="salon-saia-logo.png" alt="Salon Saia"><div><span class="gp-lbl">Name:</span> ${esc(nameOf(r.created_by))}</div></div>`;
+  const body = it.kind === "smart"
+    ? `<h1 class="gp-title">SMART Goal Planning · ${esc(it.period)}</h1>${box("3 Months:", v.m3, 4)}${box("6 Months:", v.m6, 4)}${box("12 Months:", v.m12, 4)}
+       <div class="gp-help">S - Specific: Make your goals specific and narrow for more effective planning<br>M - Measurable: Define what evidence you're making progress and reevaluate when necessary<br>A - Attainable: Make sure you can reasonably accomplish your goal within a certain time frame<br>R - Relevant: Your goals should align with your values and long term objectives<br>T - Time based: Set a realistic, ambitious end date for task prioritization and motivation</div>`
+    : `<h1 class="gp-title">Monthly Goals · ${esc(monthName(it.period))}</h1>${box("Professional:", v.professional, 3)}${box("Personal:", v.personal, 3)}
+       <div class="gp-row"><div><span class="gp-lbl">Monthly Service Goal:</span> <span class="gp-line">${amt(v.service_month)}</span></div></div>${pair("Weekly:", v.service_week, "Daily:", v.service_day)}
+       <div class="gp-row"><div><span class="gp-lbl">Monthly Retail Goal:</span> <span class="gp-line">${amt(v.retail_month)}</span></div></div>${pair("Weekly:", v.retail_week, "Daily:", v.retail_day)}
+       ${box("Notes:", v.notes, 3)}`;
+  $("printArea").innerHTML = `<div class="gp">${head}${body}</div>`;
+  const img = $("printArea").querySelector("img");
+  const go = () => setTimeout(() => window.print(), 150);
+  if (img && !img.complete) { img.onload = go; img.onerror = go; } else go();
+}
 function goalsBlock(r, mgrView) {
   const items = sheetsFor(r); if (!items.length) return "";
   const mine = r.created_by === me.email && !mgrView;
@@ -1114,7 +1132,7 @@ function goalsBlock(r, mgrView) {
     if (goalOpen === "v:" + key && it.sheet) return goalView(it) + `<button class="link" data-oo="goal-close" style="align-self:flex-start">Hide</button>`;
     const done = !!it.sheet;
     const tag = done ? `<span class="fu ok">✓ Filled out</span>` : `<span class="fu wait">${mine ? "To do" : "Not filled out yet"}</span>`;
-    const btns = (mine && r.status !== "done" ? `<button class="link" data-oo="goal-open" data-key="${key}">${done ? "Edit" : "Fill out"}</button>` : "") + (done ? `<button class="link" data-oo="goal-view" data-key="${key}">View</button>` : "");
+    const btns = (mine && r.status !== "done" ? `<button class="link" data-oo="goal-open" data-key="${key}">${done ? "Edit" : "Fill out"}</button>` : "") + (done ? `<button class="link" data-oo="goal-view" data-key="${key}">View</button><button class="link" data-oo="goal-print" data-key="${key}">Print / save</button>` : "");
     return `<div class="row" style="gap:8px;flex-wrap:wrap"><span>📝 ${esc(it.title)}</span><span class="actions" style="gap:10px">${tag}${btns}</span></div>`;
   }).join("")}</div>`;
 }
@@ -1196,6 +1214,7 @@ $("view-oo").addEventListener("click", async e => {
   if (a === "goal-open") { const g0 = $("gform"); if (g0) g0.remove(); goalOpen = b.dataset.key; renderOO(); const g = $("gform"); if (g) { const t = g.querySelector("textarea,input"); if (t) t.focus(); } return; }
   if (a === "goal-view") { goalOpen = "v:" + b.dataset.key; return renderOO(); }
   if (a === "goal-close") { goalOpen = null; return renderOO(); }
+  if (a === "goal-print") { const [rid, kind] = b.dataset.key.split(":"); const rr = oos.find(x => x.id === rid); const it = rr && sheetsFor(rr).find(x => x.kind === kind); if (it) goalPrint(rr, it); return; }
   if (a === "goal-save") {
     const data = {}; $("gform").querySelectorAll("[data-gf]").forEach(el => { const v = el.value.trim(); if (v) data[el.dataset.gf] = v; });
     const { kind, period } = b.dataset, ex = sheetOf(me.email, kind, period);
