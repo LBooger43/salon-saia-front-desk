@@ -1088,7 +1088,7 @@ function sheetsFor(r) {
 }
 const GOAL_FIELDS = {
   monthly: [["professional", "Professional goals", "area"], ["personal", "Personal goals", "area"],
-    ["service_month", "Monthly service goal ($)", "money"], ["service_week", "Weekly", "money"], ["service_day", "Daily", "money"],
+    ["days", "Days I work per week", "days"], ["service_month", "Monthly service goal ($)", "money"], ["service_week", "Weekly", "money"], ["service_day", "Daily", "money"],
     ["retail_month", "Monthly retail goal ($)", "money"], ["retail_week", "Weekly", "money"], ["retail_day", "Daily", "money"],
     ["notes", "Notes", "area"]],
   smart: [["m3", "3 months", "area"], ["m6", "6 months", "area"], ["m12", "12 months", "area"]],
@@ -1098,7 +1098,9 @@ function goalForm(r, it) {
   const v = (it.sheet && it.sheet.data) || {};
   const f = GOAL_FIELDS[it.kind].map(([k, label, t]) => {
     const full = t === "area" ? ' style="grid-column:1/-1"' : (k.endsWith("_month") ? ' style="grid-column:1/-1"' : "");
-    const input = t === "area" ? `<textarea data-gf="${k}" maxlength="1500" rows="3">${esc(v[k] || "")}</textarea>` : `<input data-gf="${k}" inputmode="decimal" maxlength="12" value="${esc(v[k] || "")}" placeholder="$">`;
+    const input = t === "area" ? `<textarea data-gf="${k}" maxlength="1500" rows="3">${esc(v[k] || "")}</textarea>`
+      : t === "days" ? `<input data-gf="${k}" type="number" min="1" max="7" step="1" inputmode="numeric" value="${esc(v[k] || "5")}">`
+      : `<input data-gf="${k}" inputmode="decimal" maxlength="12" value="${esc(v[k] || "")}" placeholder="$">`;
     return `<label${full}>${label}${input}</label>`;
   }).join("");
   return `<div class="fu-box" id="gform"><b>${esc(it.title)}</b>${it.kind === "smart" ? SMART_HELP : ""}<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${f}</div><div class="actions"><button class="primary" data-oo="goal-save" data-id="${r.id}" data-kind="${it.kind}" data-period="${it.period}">Save</button><button class="link" data-oo="goal-close">Cancel</button><span class="form-err" id="gErr"></span></div></div>`;
@@ -1109,7 +1111,7 @@ function goalView(it) {
   const row = (label, val) => val ? `<div><span class="meta">${label}</span><div class="note" style="white-space:pre-wrap">${val}</div></div>` : "";
   const body = it.kind === "smart"
     ? row("3 months", esc(v.m3)) + row("6 months", esc(v.m6)) + row("12 months", esc(v.m12))
-    : row("Professional", esc(v.professional)) + row("Personal", esc(v.personal)) + row("Service goal", money(v.service_month, v.service_week, v.service_day)) + row("Retail goal", money(v.retail_month, v.retail_week, v.retail_day)) + row("Notes", esc(v.notes));
+    : row("Professional", esc(v.professional)) + row("Personal", esc(v.personal)) + row("Days per week", esc(v.days)) + row("Service goal", money(v.service_month, v.service_week, v.service_day)) + row("Retail goal", money(v.retail_month, v.retail_week, v.retail_day)) + row("Notes", esc(v.notes));
   return `<div class="mgr" style="display:flex;flex-direction:column;gap:6px"><b>${esc(it.title)}</b>${body || `<span class="meta">Left blank.</span>`}<span class="meta">Updated ${whenFull(it.sheet.updated_at)}</span></div>`;
 }
 function goalPrint(r, it) {
@@ -1162,6 +1164,22 @@ function renderGoalFiles() {
   $("gfMineBox").hidden = isMgr() && !mine;
   goalFiles(me.email, "gfMine");
 }
+const gNum = x => parseFloat(String(x || "").replace(/[$,\s]/g, ""));
+$("view-oo").addEventListener("input", e => {
+  const k = e.target.dataset && e.target.dataset.gf; if (!k) return;
+  const g = $("gform"); if (!g) return;
+  const el = n => g.querySelector(`[data-gf="${n}"]`);
+  const days = Math.min(7, Math.max(1, gNum(el("days") && el("days").value) || 5));
+  const fill = kind => {
+    const m = gNum(el(kind + "_month").value);
+    if (!(m > 0)) return;
+    const wk = Math.round(m / 4);
+    el(kind + "_week").value = wk;
+    el(kind + "_day").value = Math.round(wk / days);
+  };
+  if (k === "service_month" || k === "days") fill("service");
+  if (k === "retail_month" || k === "days") fill("retail");
+});
 $("gfWho").addEventListener("change", () => { gfOpen = null; renderGoalFiles(); });
 $("view-oo").addEventListener("click", e => {
   const b = e.target.closest("[data-gf-act]"); if (!b) return;
