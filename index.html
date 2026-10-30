@@ -493,6 +493,7 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
           <label>Employee<input id="wu-staff" list="staffList" required maxlength="100" autocomplete="off" placeholder="Name"></label>
           <label>Date of incident<input id="wu-date" type="date" required></label>
           <label>Type<select id="wu-type"><option>Attendance</option><option>Conduct</option><option>Performance</option><option>Policy violation</option><option>Client complaint</option><option>Other</option></select></label>
+          <label class="full">Handbook policy<select id="wu-policy"><option value="">None / not a policy issue</option><option>Client experience / guest service (p. 2)</option><option>Harassment and discrimination (p. 4)</option><option>Sexual harassment (p. 4)</option><option>Confidential information / company property (pp. 4–5)</option><option>Drug and alcohol use (p. 5)</option><option>Inspections (p. 5)</option><option>State board license requirements (p. 5)</option><option>Dress code (p. 5)</option><option>Tips (p. 6)</option><option>Breaks / lunches (p. 7)</option><option>Attendance / time off requests (p. 7)</option><option>Punctuality (p. 7)</option><option>Illness / calling out (p. 7)</option><option>Cell phones / personal calls (pp. 7–8)</option><option>Break room courtesy (p. 8)</option><option>Cleanliness (p. 8)</option><option>Laundry (p. 8)</option><option>Smoking / vaping (p. 8)</option><option>Parking (p. 8)</option><option>Safety / reporting an injury (p. 8)</option><option>Family / friend service discount (p. 10)</option><option>Product discount (p. 10)</option><option>Vacation requests (p. 10)</option><option>Not covered in the handbook</option></select></label>
           <label>Level<select id="wu-level"><option>Documented verbal warning</option><option>Written warning</option><option>Final written warning</option></select></label>
           <label class="full">What happened<textarea id="wu-what" required maxlength="4000" placeholder="Facts only: what, when, where, who was involved."></textarea></label>
           <label class="full">Notes<textarea id="wu-notes" maxlength="4000" placeholder="Prior conversations, the employee's side, anything else."></textarea></label>
@@ -745,14 +746,20 @@ function wuItemRow(task = "", due = "") {
   d.children[2].onclick = () => d.remove();
   $("wu-items").appendChild(d);
 }
-$("wuNew").onclick = () => { $("wuForm").hidden = false; $("wuNew").hidden = true; $("wu-date").value = daysAgo(0); $("wu-items").innerHTML = ""; wuItemRow(); $("wu-staff").focus(); };
+$("wuNew").onclick = () => { wuTypeTouched = false; $("wuForm").hidden = false; $("wuNew").hidden = true; $("wu-date").value = daysAgo(0); $("wu-items").innerHTML = ""; wuItemRow(); $("wu-staff").focus(); };
 $("wu-additem").onclick = () => wuItemRow();
 const wuClose = () => { $("wuForm").hidden = true; $("wuNew").hidden = false; $("wuForm").reset(); $("wu-items").innerHTML = ""; $("wu-err").textContent = ""; };
 $("wu-cancel").onclick = wuClose;
+let wuTypeTouched = false;
+$("wu-type").addEventListener("change", () => { wuTypeTouched = true; });
+$("wu-policy").addEventListener("change", e => {
+  const v = e.target.value; if (!v || wuTypeTouched || v === "Not covered in the handbook") return;
+  $("wu-type").value = /Attendance|Punctuality|Illness|Vacation/.test(v) ? "Attendance" : /Client experience/.test(v) ? "Performance" : "Policy violation";
+});
 $("wuForm").addEventListener("submit", async e => {
   e.preventDefault(); $("wu-err").textContent = "";
   const actions = [...$("wu-items").children].map(r => ({ task: r.children[0].value.trim(), due: r.children[1].value || null, done: false })).filter(a => a.task);
-  const row = { staff_member: $("wu-staff").value.trim(), incident_date: $("wu-date").value, category: $("wu-type").value, level: $("wu-level").value,
+  const row = { staff_member: $("wu-staff").value.trim(), incident_date: $("wu-date").value, category: $("wu-type").value, level: $("wu-level").value, policy: $("wu-policy").value || null,
     description: $("wu-what").value.trim(), notes: $("wu-notes").value.trim() || null, action_plan: $("wu-plan").value.trim(), actions,
     review_date: $("wu-review").value || null, witnesses: $("wu-witness").value.trim() || null, created_by: me.email };
   if (!row.staff_member || !row.description || !row.action_plan) return;
@@ -800,6 +807,7 @@ function renderWriteups() {
     return `<article class="entry" style="--stripe:${w.level.startsWith("Final") ? "var(--crit)" : w.level.startsWith("Written") ? "var(--warn)" : "var(--private)"}">
       <div class="row"><span class="name">${esc(w.staff_member)}</span>${wuStatus(w)}</div>
       <div class="row"><span><span class="tag">${esc(w.category)}</span> <span class="meta">${esc(w.level)}</span></span><span class="meta">${fmt(w.incident_date)}</span></div>
+      ${w.policy ? `<div class="meta">📘 ${esc(w.policy)}</div>` : ""}
       ${open ? `<div class="meta">${open} open action ${open === 1 ? "item" : "items"}</div>` : ""}
       ${wuOpen === w.id ? wuDetail(w) : `<div class="actions"><button class="link" data-wu="open" data-id="${w.id}">Open</button></div>`}
     </article>`;
@@ -820,7 +828,7 @@ async function wuPdf(w) {
   const head = t => { y += 8; room(30); doc.setDrawColor(180); doc.line(L, y - 10, L + W, y - 10); text(t.toUpperCase(), 9, true); y += 2; };
   const field = (k, v) => { room(16); doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(k + ":", L, y); doc.setFont("helvetica", "normal"); doc.text(String(v), L + 120, y); y += 16; };
   text("Salon Saia · Employee write-up", 18, true); y += 6;
-  field("Employee", w.staff_member); field("Date of incident", fmt(w.incident_date)); field("Type", w.category); field("Level", w.level);
+  field("Employee", w.staff_member); field("Date of incident", fmt(w.incident_date)); field("Type", w.category); if (w.policy) field("Handbook policy", w.policy); field("Level", w.level);
   if (w.review_date) field("Follow-up review", fmt(w.review_date));
   head("What happened"); text(w.description);
   if (w.notes) { head("Notes"); text(w.notes); }
@@ -857,7 +865,7 @@ function wuPrint(w) {
   };
   const items = (w.actions || []).map(a => `<tr><td>${a.done ? "☑" : "☐"} ${esc(a.task)}</td><td>${a.due ? fmt(a.due) : ""}</td></tr>`).join("");
   $("printArea").innerHTML = `<h1>Salon Saia · Employee write-up</h1>
-    <table><tr><td>Employee</td><td>${esc(w.staff_member)}</td></tr><tr><td>Date of incident</td><td>${fmt(w.incident_date)}</td></tr><tr><td>Type</td><td>${esc(w.category)}</td></tr><tr><td>Level</td><td>${esc(w.level)}</td></tr>${w.review_date ? `<tr><td>Follow-up review</td><td>${fmt(w.review_date)}</td></tr>` : ""}</table>
+    <table><tr><td>Employee</td><td>${esc(w.staff_member)}</td></tr><tr><td>Date of incident</td><td>${fmt(w.incident_date)}</td></tr><tr><td>Type</td><td>${esc(w.category)}</td></tr>${w.policy ? `<tr><td>Handbook policy</td><td>${esc(w.policy)}</td></tr>` : ""}<tr><td>Level</td><td>${esc(w.level)}</td></tr>${w.review_date ? `<tr><td>Follow-up review</td><td>${fmt(w.review_date)}</td></tr>` : ""}</table>
     <h3>What happened</h3><p>${esc(w.description)}</p>${w.notes ? `<h3>Notes</h3><p>${esc(w.notes)}</p>` : ""}<h3>Plan of action</h3><p>${esc(w.action_plan)}</p>
     ${items ? `<h3>Action items</h3><table><tr><td><b>Item</b></td><td><b>Due</b></td></tr>${items}</table>` : ""}
     ${w.witnesses ? `<h3>Witnesses</h3><p>${esc(w.witnesses)}</p>` : ""}
