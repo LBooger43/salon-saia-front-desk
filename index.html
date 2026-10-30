@@ -684,12 +684,11 @@ async function loadAll() {
   mlog = realMgr() ? (r[7].data || []) : [];
   writeups = realMgr() ? (r[8].data || []) : [];
   const since14 = new Date(Date.now() - 14 * 864e5).toISOString();
-  const [ra, rm, rt, roo, rgs, rr, rsi, rsn, rrep, rad, ral] = await Promise.all([
+  const [ra, rm, rt, roo, rr, rsi, rsn, rrep, rad, ral] = await Promise.all([
     sb.from("announcements").select("*").order("created_at", {ascending: false}).limit(50),
     sb.from("messages").select("*").order("created_at", {ascending: false}).limit(200),
     sb.from("time_off").select("*").order("off_from", {ascending: true}).limit(500),
     sb.from("one_on_ones").select("*").order("created_at", {ascending: false}).limit(500),
-    sb.from("goal_sheets").select("*").order("period", {ascending: false}).limit(1000),
     realMgr() ? Promise.resolve({ data: [] }) : sb.from("todos").select("*").eq("created_by", me.email).order("created_at", {ascending: false}).limit(30),
     sb.from("supply_items").select("*").eq("active", true).order("sort").order("name"),
     sb.from("supply_needs").select("*").or(`bought.eq.false,bought_at.gte."${since14}"`).order("requested_at", {ascending: false}).limit(500),
@@ -699,7 +698,7 @@ async function loadAll() {
   ]);
   replies = {}; (rrep.data || []).forEach(x => (replies[x.log_id] = replies[x.log_id] || []).push(x));
   arch = { d: rad.data || [], l: ral.data || [] };
-  anns = ra.data || []; msgs = rm.data || []; timeOff = rt.data || []; oos = roo.data || []; goals = rgs.data || []; myReports = rr.data || []; supItems = rsi.data || []; supNeeds = rsn.data || [];
+  anns = ra.data || []; msgs = rm.data || []; timeOff = rt.data || []; oos = roo.data || []; myReports = rr.data || []; supItems = rsi.data || []; supNeeds = rsn.data || [];
   await Promise.all([fetchRange("d"), fetchRange("l")]);
   await signPhotos([...daily, ...incidents, ...msgs, ...myReports, ...todos, ...mlog, ...(rangeData.d || []), ...(rangeData.l || []), ...arch.d, ...arch.l].map(x => x.photo).concat(writeups.flatMap(w => [w.employee_sig, w.witness_sig, w.manager_sig])));
   renderAll();
@@ -1067,57 +1066,7 @@ $("view-time").addEventListener("click", async e => {
 });
 
 /* ---------- one-on-ones ---------- */
-let oos = [], ooShowPast = false, ooSuggest = null, ooDecline = null, goals = [], goalOpen = null;
-const ooDay = r => r.meet_date || r.req_date;
-const monthName = ym => new Date(ym + "-15T12:00").toLocaleDateString(undefined, {month: "long", year: "numeric"});
-const sheetOf = (who, kind, period) => goals.find(g => g.created_by === who && g.kind === kind && g.period === period);
-function sheetsFor(r) {
-  if (r.status !== "confirmed" && r.status !== "done") return [];
-  const ym = ooDay(r).slice(0, 7), yr = ooDay(r).slice(0, 4), out = [];
-  const sm = sheetOf(r.created_by, "smart", yr);
-  if (!sm || sm.one_on_one_id === r.id) out.push({ kind: "smart", period: yr, title: `SMART Goal Planning (${yr})`, sheet: sm });
-  out.push({ kind: "monthly", period: ym, title: `Monthly Goals (${monthName(ym)})`, sheet: sheetOf(r.created_by, "monthly", ym) });
-  return out;
-}
-const GOAL_FIELDS = {
-  monthly: [["professional", "Professional goals", "area"], ["personal", "Personal goals", "area"],
-    ["service_month", "Monthly service goal ($)", "money"], ["service_week", "Weekly", "money"], ["service_day", "Daily", "money"],
-    ["retail_month", "Monthly retail goal ($)", "money"], ["retail_week", "Weekly", "money"], ["retail_day", "Daily", "money"],
-    ["notes", "Notes", "area"]],
-  smart: [["m3", "3 months", "area"], ["m6", "6 months", "area"], ["m12", "12 months", "area"]],
-};
-const SMART_HELP = `<div class="meta" style="line-height:1.5"><b>S</b>pecific: make your goals specific and narrow · <b>M</b>easurable: how you'll know you're making progress · <b>A</b>ttainable: something you can reasonably accomplish in that time · <b>R</b>elevant: fits your values and long-term plans · <b>T</b>ime based: a realistic, ambitious end date</div>`;
-function goalForm(r, it) {
-  const v = (it.sheet && it.sheet.data) || {};
-  const f = GOAL_FIELDS[it.kind].map(([k, label, t]) => {
-    const full = t === "area" ? ' style="grid-column:1/-1"' : (k.endsWith("_month") ? ' style="grid-column:1/-1"' : "");
-    const input = t === "area" ? `<textarea data-gf="${k}" maxlength="1500" rows="3">${esc(v[k] || "")}</textarea>` : `<input data-gf="${k}" inputmode="decimal" maxlength="12" value="${esc(v[k] || "")}" placeholder="$">`;
-    return `<label${full}>${label}${input}</label>`;
-  }).join("");
-  return `<div class="fu-box" id="gform"><b>${esc(it.title)}</b>${it.kind === "smart" ? SMART_HELP : ""}<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${f}</div><div class="actions"><button class="primary" data-oo="goal-save" data-id="${r.id}" data-kind="${it.kind}" data-period="${it.period}">Save</button><button class="link" data-oo="goal-close">Cancel</button><span class="form-err" id="gErr"></span></div></div>`;
-}
-function goalView(it) {
-  const v = it.sheet.data || {};
-  const money = (a, b, c) => [a, b, c].some(Boolean) ? `${a ? "$" + esc(a.replace(/^\$/, "")) + "/mo" : ""}${b ? " · $" + esc(b.replace(/^\$/, "")) + "/wk" : ""}${c ? " · $" + esc(c.replace(/^\$/, "")) + "/day" : ""}` : "";
-  const row = (label, val) => val ? `<div><span class="meta">${label}</span><div class="note" style="white-space:pre-wrap">${val}</div></div>` : "";
-  const body = it.kind === "smart"
-    ? row("3 months", esc(v.m3)) + row("6 months", esc(v.m6)) + row("12 months", esc(v.m12))
-    : row("Professional", esc(v.professional)) + row("Personal", esc(v.personal)) + row("Service goal", money(v.service_month, v.service_week, v.service_day)) + row("Retail goal", money(v.retail_month, v.retail_week, v.retail_day)) + row("Notes", esc(v.notes));
-  return `<div class="mgr" style="display:flex;flex-direction:column;gap:6px"><b>${esc(it.title)}</b>${body || `<span class="meta">Left blank.</span>`}<span class="meta">Updated ${whenFull(it.sheet.updated_at)}</span></div>`;
-}
-function goalsBlock(r, mgrView) {
-  const items = sheetsFor(r); if (!items.length) return "";
-  const mine = r.created_by === me.email && !mgrView;
-  return `<div style="display:flex;flex-direction:column;gap:6px;margin-top:4px"><span class="meta"><b>${mine ? "Before your 1:1, fill out" : "Goal sheets"}</b></span>${items.map(it => {
-    const key = r.id + ":" + it.kind;
-    if (mine && goalOpen === key) return goalForm(r, it);
-    if (goalOpen === "v:" + key && it.sheet) return goalView(it) + `<button class="link" data-oo="goal-close" style="align-self:flex-start">Hide</button>`;
-    const done = !!it.sheet;
-    const tag = done ? `<span class="fu ok">✓ Filled out</span>` : `<span class="fu wait">${mine ? "To do" : "Not filled out yet"}</span>`;
-    const btns = (mine && r.status !== "done" ? `<button class="link" data-oo="goal-open" data-key="${key}">${done ? "Edit" : "Fill out"}</button>` : "") + (done ? `<button class="link" data-oo="goal-view" data-key="${key}">View</button>` : "");
-    return `<div class="row" style="gap:8px;flex-wrap:wrap"><span>📝 ${esc(it.title)}</span><span class="actions" style="gap:10px">${tag}${btns}</span></div>`;
-  }).join("")}</div>`;
-}
+let oos = [], ooShowPast = false, ooSuggest = null, ooDecline = null;
 const ooWhen = r => r.meet_date ? `${fmt(r.meet_date)} at ${t12(r.meet_time)}` : `${fmt(r.req_date)} at ${t12(r.req_time)}`;
 const ooTag = st => ({
   pending: `<span class="fu wait">Waiting for a manager</span>`,
@@ -1144,21 +1093,17 @@ function ooRow(r, mgrView) {
     <div><b>${ooWhen(r)}</b></div>${asked}
     ${r.topic ? `<p class="note">${esc(r.topic)}</p>` : ""}
     ${r.manager_note ? `<div class="mgr"><b>From ${esc(nameOf(r.decided_by))}</b><div class="note">${esc(r.manager_note)}</div></div>` : ""}
-    ${goalsBlock(r, mgrView)}
     <div class="meta">Requested ${whenFull(r.created_at)}</div>${act}</article>`;
 }
 function renderOO() {
   if (!me) return;
-  const keep = {}; const gf = $("gform"); if (gf) gf.querySelectorAll("[data-gf]").forEach(el => keep[el.dataset.gf] = el.value);
-  setTimeout(() => { const g = $("gform"); if (g && Object.keys(keep).length) g.querySelectorAll("[data-gf]").forEach(el => { if (el.dataset.gf in keep) el.value = keep[el.dataset.gf]; }); }, 0);
   const today = daysAgo(0);
   const mgrs = team.filter(t => t.role === "manager");
   const sel = $("oo-mgr"), cur = sel.value;
   sel.innerHTML = `<option value="">Any manager</option>` + mgrs.map(m => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("");
   sel.value = cur;
   const pend = isMgr() ? oos.filter(r => r.status === "pending") : [];
-  const myNew = oos.filter(r => r.created_by === me.email && r.status === "proposed").length
-    + oos.filter(r => r.created_by === me.email && r.status === "confirmed").reduce((n, r) => n + sheetsFor(r).filter(it => !it.sheet).length, 0);
+  const myNew = oos.filter(r => r.created_by === me.email && r.status === "proposed").length;
   const badge = isMgr() ? pend.length : myNew;
   $("tab-oo").textContent = badge ? `1:1s (${badge})` : "1:1s";
   $("ooMgrWrap").hidden = !isMgr();
@@ -1193,19 +1138,6 @@ $("view-oo").addEventListener("click", async e => {
   const b = e.target.closest("[data-oo]"); if (!b) return;
   const a = b.dataset.oo, id = b.dataset.id, r = oos.find(x => x.id === id);
   if (a === "close") { ooSuggest = null; ooDecline = null; return renderOO(); }
-  if (a === "goal-open") { const g0 = $("gform"); if (g0) g0.remove(); goalOpen = b.dataset.key; renderOO(); const g = $("gform"); if (g) { const t = g.querySelector("textarea,input"); if (t) t.focus(); } return; }
-  if (a === "goal-view") { goalOpen = "v:" + b.dataset.key; return renderOO(); }
-  if (a === "goal-close") { goalOpen = null; return renderOO(); }
-  if (a === "goal-save") {
-    const data = {}; $("gform").querySelectorAll("[data-gf]").forEach(el => { const v = el.value.trim(); if (v) data[el.dataset.gf] = v; });
-    const { kind, period } = b.dataset, ex = sheetOf(me.email, kind, period);
-    b.disabled = true;
-    const { error } = ex
-      ? await sb.from("goal_sheets").update({ data, updated_at: new Date().toISOString() }).eq("id", ex.id)
-      : await sb.from("goal_sheets").insert({ kind, period, data, one_on_one_id: id, created_by: me.email });
-    if (error) { b.disabled = false; $("gErr").textContent = friendly(error); return; }
-    goalOpen = null; $("gform").remove(); $("foot").textContent = "Goal sheet saved."; return loadAll();
-  }
   if (a === "suggest") { ooSuggest = id; ooDecline = null; return renderOO(); }
   if (a === "decline") { ooDecline = id; ooSuggest = null; return renderOO(); }
   const now = new Date().toISOString();
