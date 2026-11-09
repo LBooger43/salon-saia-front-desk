@@ -1448,7 +1448,7 @@ function apAnswers(a) {
   }).filter(Boolean);
   const extra = Object.keys(ans).filter(k => k !== "source" && !used.has(k));
   if (extra.length) secs.push(`<div style="display:flex;flex-direction:column;gap:6px"><b>Other answers</b>${extra.map(k => `<div><span class="meta">${esc(k.replace(/^q\d+_/, ""))}</span><div class="note">${esc(ans[k])}</div></div>`).join("")}</div>`);
-  return `<div class="mgr" style="display:flex;flex-direction:column;gap:14px">${secs.join("") || `<span class="meta">No answers saved.</span>`}</div>`;
+  return `<div class="mgr" style="display:flex;flex-direction:column;gap:14px"><button class="link" data-ap="print" data-id="${a.id}" style="align-self:flex-start">🖨 Print application</button>${secs.join("") || `<span class="meta">No answers saved.</span>`}</div>`;
 }
 function apCard(a) {
   const open = apOpen === a.id;
@@ -1501,6 +1501,7 @@ $("apSearch").addEventListener("input", () => renderApps());
 $("view-apps").addEventListener("click", async e => {
   const b = e.target.closest("[data-ap]"); if (!b || !isMgr()) return;
   const act = b.dataset.ap, id = b.dataset.id, a = applicants.find(x => x.id === id);
+  if (act === "print") { if (a) apPrint(a); return; }
   if (act === "close") { apSched = null; apDel = null; return renderApps(); }
   if (act === "full") { apFull = apFull === id ? null : id; return renderApps(); }
   if (act === "sched") { apSched = id; apDel = null; return renderApps(); }
@@ -1735,6 +1736,22 @@ $("wiForm").addEventListener("submit", async e => {
   $("wiForm").reset(); wiPick = null; wiShowPick(); $("wiForm").hidden = true; $("wiToggle").hidden = false;
   $("foot").textContent = `${name} added to applicants.`; loadAll();
 });
+
+
+/* print a full application (like Jotform's PDF) */
+function apPrint(a) {
+  const w = window.open("", "_blank"); if (!w) return;
+  const body = apAnswers(a).replace(/<button[^>]*data-ap="print"[^>]*>.*?<\/button>/, "");
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Application · ${esc(a.name)}</title>
+  <style>body{font:14px/1.45 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#16213e;margin:32px auto;max-width:720px;padding:0 20px}
+  h1{font-size:22px;margin:0 0 4px}.meta{color:#5f6b85;font-size:12px}.note{margin:1px 0 6px}b{display:block;font-size:15px;margin-top:14px;border-bottom:1px solid #dfe3ef;padding-bottom:3px}
+  .mgr{display:block!important}.mgr>div{break-inside:avoid}@media print{.bar{display:none}body{margin:0 auto}}<\/style><\/head><body><div class="bar" style="text-align:right"><button onclick="print()" style="font:600 14px sans-serif;padding:8px 14px;border-radius:8px;border:0;background:#5a56d6;color:#fff">Print</button></div>
+  <h1>${esc(a.name)}</h1><div class="meta">${esc([a.position, a.phone, a.email].filter(Boolean).join(" · "))}</div>
+  <div class="meta">Applied ${esc(whenFull(a.submitted_at))}${a.status ? ` · Status: ${esc((AP_STATUS[a.status] || [a.status])[0])}` : ""}</div>
+  ${body}${a.notes ? `<b>Manager notes</b><div class="note" style="white-space:pre-wrap">${esc(a.notes)}</div>` : ""}
+  <script>window.onload=function(){setTimeout(function(){print()},300)}<\/script><\/body><\/html>`);
+  w.document.close();
+}
 
 /* ---------- employee handbook ---------- */
 async function latestHandbook() {
