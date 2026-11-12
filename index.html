@@ -281,6 +281,7 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
           <button type="button" class="cat" aria-pressed="true">General</button>
         </div>
         <label class="fu-check"><input type="checkbox" id="d-fu"> Needs manager follow-up</label>
+        <label class="fu-check" for="d-to" style="cursor:default"><span style="flex:none">📌 Send to</span><select id="d-to" style="flex:1;min-width:0;width:auto"><option value="">No one, just log it</option></select></label>
         <div class="quick-row">
           <input id="d-time" type="time" aria-label="Time">
           <span class="meta">Time fills in automatically</span>
@@ -388,6 +389,11 @@ input[type=date]{min-width:0;min-height:42px;-webkit-appearance:none;appearance:
 
     <!-- TEAM CHAT (everyone) -->
     <section id="view-chat" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="quick" id="forYouBox" hidden style="border:2px solid var(--warn)">
+        <h2 class="h2">📌 For you</h2>
+        <p class="meta" style="margin:0">Notes the front desk sent you. Tap Done once you've handled it.</p>
+        <div class="feed" id="forYouFeed"></div>
+      </div>
       <div class="quick" id="hbBox" style="border:2px solid var(--accent)">
         <h2 class="h2">📘 Employee handbook</h2>
         <p class="meta" style="margin:0" id="hbMeta">Read it, then sign that you received it.</p>
@@ -815,6 +821,7 @@ async function loadAll() {
   anns = ra.data || []; msgs = rm.data || []; timeOff = rt.data || []; oos = roo.data || []; goals = rgs.data || []; applicants = rap.data || []; myReports = rr.data || []; supItems = rsi.data || []; supNeeds = rsn.data || [];
   await Promise.all([fetchRange("d"), fetchRange("l")]);
   if (me.role !== "stylist") { const rco = await sb.from("cash_outs").select("*").order("created_at", { ascending: false }).limit(300); cashOuts = rco.data || []; await signPhotos(cashOuts.map(x => x.photo)); } else cashOuts = [];
+  { const ral = await sb.from("staff_alerts").select("*").order("created_at", { ascending: false }).limit(500); alerts = ral.data || []; }
   const rpj = me && (me.role === "manager" || me.role === "front_desk" || me.also_desk) ? await sb.from("print_jobs").select("*").order("created_at", {ascending: false}).limit(300) : { data: [] };
   prJobs = rpj.data || []; prReady = !rpj.error;
   await signPhotos([...daily, ...incidents, ...msgs, ...myReports, ...todos, ...mlog, ...(rangeData.d || []), ...(rangeData.l || []), ...arch.d, ...arch.l].map(x => x.photo).concat(prJobs.map(j => j.file_path), writeups.flatMap(w => [w.employee_sig, w.witness_sig, w.manager_sig])));
@@ -823,7 +830,7 @@ async function loadAll() {
 let reloadTimer = null;
 const scheduleReload = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(loadAll, 400); };
 
-function renderAll() { renderCash(); renderPrint(); renderDaily(); renderLog(); renderArch("d"); renderArch("l"); renderStaff(); renderTeam(); renderTodo(); renderChat(); renderTime(); renderOO(); renderApps(); renderSupplies(); renderMlog(); renderWriteups(); }
+function renderAll() { renderAlerts(); renderCash(); renderPrint(); renderDaily(); renderLog(); renderArch("d"); renderArch("l"); renderStaff(); renderTeam(); renderTodo(); renderChat(); renderTime(); renderOO(); renderApps(); renderSupplies(); renderMlog(); renderWriteups(); }
 
 /* ---------- staff write-ups ---------- */
 let writeups = [], wuOpen = null, wuSign = null, wuDel = null, wuPad = null;
@@ -1988,7 +1995,7 @@ function renderDailyInner() {
   const days = {}; list.forEach(d => (days[d.entry_date] = days[d.entry_date] || []).push(d));
   $("dailyFeed").innerHTML = Object.entries(days).map(([day, items]) => `<div class="day"><h2>${esc(dayLabel(day))}<span>${items.length} ${items.length === 1 ? "note" : "notes"}</span></h2>
     ${items.map(d => {
-      const badge = d.fu ? (d.fuDone ? `<span class="fu ok">✓ Followed up</span>` : `<span class="fu wait">⚑ Needs follow-up</span>`) : "";
+      const badge = (d.fu ? (d.fuDone ? `<span class="fu ok">✓ Followed up</span>` : `<span class="fu wait">⚑ Needs follow-up</span>`) : "") + alertChip(d.id);
       const reply = d.fuDone && d.fuNote ? `<div class="mgr"><b>Manager follow-up</b><div class="note">${esc(d.fuNote)}</div></div>` : "";
       let mgr = "";
       const canEdit = isMgr() || (isDesk() && d.created_by === me.email);
@@ -2022,8 +2029,11 @@ $("dailyForm").addEventListener("submit", async e => {
   const note = $("d-note").value.trim(); if (!note) return;
   let photo = null;
   try { photo = await uploadPhoto("d", "daily"); } catch { $("d-err").textContent = "Couldn't upload the photo. Try again."; return; }
-  const { error } = await sb.from("daily_log").insert({ entry_date: daysAgo(0), entry_time: $("d-time").value || nowTime(), category: dcat, note, photo, needs_followup: $("d-fu").checked, created_by: me.email });
+  const { data: logRow, error } = await sb.from("daily_log").insert({ entry_date: daysAgo(0), entry_time: $("d-time").value || nowTime(), category: dcat, note, photo, needs_followup: $("d-fu").checked, created_by: me.email }).select("id").single();
   if (error) { $("d-err").textContent = friendly(error); return; }
+  const sendTo = $("d-to").value;
+  if (sendTo) { const r2 = await sb.from("staff_alerts").insert({ to_email: sendTo, note, log_id: logRow && logRow.id, created_by: me.email }); if (r2.error) $("d-err").textContent = "Logged, but couldn't send it to " + nameOf(sendTo) + ". Try again from a new note."; }
+  $("d-to").value = "";
   clearPhoto("d"); $("d-note").value = ""; $("d-fu").checked = false; delete $("d-time").dataset.touched; $("d-time").value = nowTime();
   loadAll();
 });
@@ -2078,6 +2088,34 @@ $("dailyFeed").addEventListener("click", async e => {
   else if (a === "del-yes") { confirmDel = null; ({ error } = await sb.from("daily_log").delete().eq("id", id)); }
   if (error) alert(friendly(error));
   if (["fu-save", "fu-reopen", "fu-flag", "del-yes"].includes(a)) loadAll(); else renderDaily();
+});
+
+/* ---------- notes sent to one person ---------- */
+let alerts = [];
+function alertChip(logId) {
+  const list = alerts.filter(a => a.log_id === logId); if (!list.length) return "";
+  const first = e => esc(nameOf(e).split(" ")[0]);
+  return list.map(a => `<span class="fu ${a.done_at ? "ok" : "wait"}" style="display:inline-block;white-space:nowrap">📌 ${a.done_at ? first(a.to_email) + " · done ✓" : "Sent to " + first(a.to_email)}</span>`).join("");
+}
+function renderAlerts() {
+  if (!me || !$("forYouFeed")) return;
+  const sel = $("d-to"), keep = sel.value;
+  const people = team.filter(t => t.email !== me.email).sort((a, b) => (a.role === "stylist" ? 0 : 1) - (b.role === "stylist" ? 0 : 1) || a.name.localeCompare(b.name));
+  sel.innerHTML = `<option value="">No one, just log it</option>` + people.map(t => `<option value="${esc(t.email)}">${esc(t.name)}${t.role === "stylist" ? "" : " (" + roleName(t.role) + ")"}</option>`).join("");
+  sel.value = keep;
+  const mine = alerts.filter(a => a.to_email === me.email);
+  const open = mine.filter(a => !a.done_at);
+  const recentDone = mine.filter(a => a.done_at && Date.now() - new Date(a.done_at) < 2 * 864e5);
+  $("tab-chat").textContent = open.length ? `Team 💬 (${open.length})` : "Team 💬";
+  $("forYouBox").hidden = !(open.length || recentDone.length);
+  $("forYouFeed").innerHTML = [...open, ...recentDone].map(a => `<div class="todo${a.done_at ? " done" : ""}"><div class="body"><div class="row"><b>From ${esc(nameOf(a.created_by))}</b><span class="meta">${esc(whenFull(a.created_at))}</span></div><p class="note">${esc(a.note)}</p>${a.done_at ? `<span class="meta">✓ Done</span>` : `<div class="actions"><button class="primary" data-alert="done" data-id="${a.id}">✓ Done</button></div>`}</div></div>`).join("");
+}
+$("forYouFeed").addEventListener("click", async e => {
+  const b = e.target.closest("[data-alert]"); if (!b) return;
+  b.disabled = true;
+  const { error } = await sb.from("staff_alerts").update({ done_at: new Date().toISOString() }).eq("id", b.dataset.id);
+  if (error) { b.disabled = false; return alert(friendly(error)); }
+  loadAll();
 });
 
 /* ---------- nightly cash out ---------- */
@@ -2332,6 +2370,7 @@ const PUSH_CATS = [
   ["applicants", "New applicants", "When someone applies on Jotform", true],
   ["print", "Things to print", "When a manager sends a flyer or ad to print", false],
   ["announcements", "Announcements and handbook", "New announcements and handbook updates", false],
+  ["foryou", "Notes sent to me", "When the front desk sends you a note from the daily log", false],
   ["replies", "Replies to me", "When someone replies to your chat message", false],
   ["chat", "Team chat", "Every chat message (can get busy)", false],
 ];
